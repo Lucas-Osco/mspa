@@ -32,7 +32,7 @@ Alternatively, copy the standalone [`mspa.py`](mspa.py) file directly into your 
 
 ---
 
-## Quick Start (Drop-in Replacement for PCA)
+## Quick Start
 
 ```python
 from mspa import MSPA, generate_synthetic_vegetation_spectra
