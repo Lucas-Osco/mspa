@@ -6,7 +6,7 @@
 
 **Morpho-Spectral Projection Analysis (`MSPA`)** is a supervised dimensionality reduction operator designed specifically for contiguous one-dimensional reflectance, transmittance, and absorbance spectra ($\mathcal{T}: \mathbb{R}^D \to \mathbb{R}^K$).
 
-Standard dimensionality reduction methods—such as Principal Component Analysis (`PCA`), Partial Least Squares (`PLS-DA`), `UMAP`, and Self-Organizing Maps (`SOM`)—are **column-permutation invariant**: they treat adjacent wavelengths as unordered tabular columns, discarding the sequential differential topology of the spectral curve. `MSPA` overcomes this limitation while adhering strictly to the `scikit-learn` transformer API (`fit`, `transform`, `fit_transform`, `Pipeline`, and `set_output(transform="pandas")`).
+Standard dimensionality reduction methods, such as Principal Component Analysis (`PCA`), Partial Least Squares (`PLS-DA`), `UMAP`, and Self-Organizing Maps (`SOM`), are **column-permutation invariant**: they treat adjacent wavelengths as unordered tabular columns, discarding the sequential differential topology of the spectral curve. `MSPA` overcomes this limitation while adhering strictly to the `scikit-learn` transformer API (`fit`, `transform`, `fit_transform`, `Pipeline`, and `set_output(transform="pandas")`).
 
 ---
 
@@ -25,7 +25,7 @@ Given an input spectral matrix $\mathbf{X} \in \mathbb{R}^{N \times D}$ ordered 
 You can install `MSPA` directly from GitHub via `pip`:
 
 ```bash
-pip install git+[https://github.com/YOUR_USERNAME/mspa.git](https://github.com/YOUR_USERNAME/mspa.git)
+pip install git+[https://github.com/Lucas-Osco/mspa/.git](https://github.com/Lucas-Osco/mspa/.git)
 ```
 
 Alternatively, copy the standalone [`mspa.py`](mspa.py) file directly into your working directory (requires only `numpy`, `scipy`, `scikit-learn`, and `pandas`).
@@ -78,8 +78,8 @@ If you use `MSPA` in your research, please cite:
 
 ```bibtex
 @article{Osco2026MSPA,
-  author  = {Osco, Lucas Prado and collaborators},
-  title   = {Morpho-Spectral Projection Analysis ({MSPA}) and Tabular Foundation Models for Agricultural Reflectance Spectroscopy},
+  author  = {Osco, L.P., et al.},
+  title   = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Reflectance Spectroscopy},
   journal = {Submitted Manuscript},
   year    = {2026}
 }
