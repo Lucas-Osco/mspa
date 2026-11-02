@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mspa-spectroscopy"
+version = "1.0.0"
+description = "Morpho-Spectral Projection Analysis (MSPA): Supervised Dimensionality Reduction for Reflectance and Absorbance Spectroscopy"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Lucas Prado Osco"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.8",
+    "scikit-learn>=1.2",
+    "pandas>=1.5"
+]
+
+[tool.setuptools]
+py-modules = ["mspa"]
