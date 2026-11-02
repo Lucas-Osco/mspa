@@ -1,5 +1,6 @@
 # MSPA: Morpho-Spectral Projection Analysis
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![scikit-learn compatible](https://img.shields.io/badge/scikit--learn-compatible-orange.svg)](https://scikit-learn.org/)
@@ -7,6 +8,14 @@
 **Morpho-Spectral Projection Analysis (`MSPA`)** is a supervised dimensionality reduction operator designed for contiguous one-dimensional reflectance, transmittance, and absorbance spectra ($\mathcal{T}: \mathbb{R}^D \to \mathbb{R}^K$).
 
 Conventional dimensionality reduction techniques, such as Principal Component Analysis (`PCA`), Partial Least Squares (`PLS-DA`), `UMAP`, and Self-Organizing Maps (`SOM`), are **column-permutation invariant**: they treat adjacent wavelengths as unordered tabular columns, discarding the sequential differential geometry of the spectral curve. `MSPA` preserves physical wavelength contiguity while adhering strictly to the `scikit-learn` transformer API (`fit`, `transform`, `fit_transform`, `Pipeline`, and `set_output`).
+
+---
+
+## Interactive Google Colab Demo
+
+You can test `MSPA` directly in your browser without installing anything locally using our interactive notebook with synthetic foliar reflectance spectra:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb) **[Launch `MSPA_Colab_Tutorial.ipynb` in Google Colab](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb)**
 
 ---
 
@@ -25,7 +34,7 @@ Given an input spectral matrix $\mathbf{X} \in \mathbb{R}^{N \times D}$ ordered 
 Install directly from GitHub via `pip`:
 
 ```bash
-pip install git+[https://github.com/Lucas-Osco/mspa.git](https://github.com/Lucas-Osco/mspa.git)
+pip install git+https://github.com/Lucas-Osco/mspa.git
 ```
 
 Alternatively, copy the standalone [`mspa.py`](mspa.py) file into your project directory (requires only `numpy`, `scipy`, `scikit-learn`, and `pandas`).
@@ -94,8 +103,8 @@ print("Projected test matrix shape:", X_test_auto.shape)            # (90, 52)
 
 `MSPA` accepts both `pandas.DataFrame` and `numpy.ndarray` inputs:
 
-* **With a `pandas.DataFrame`:** If `wavelengths=None`, `MSPA` automatically parses numerical wavelengths from the column headers (e.g., `"WL_401"`, `"401"`, or `"401.0 nm"`).
-* **With a `numpy.ndarray`:** Pass the 1D `wavelengths` array explicitly so `MSPA` can locate the optical sub-windows and detect atmospheric excision jumps.
+- **With a `pandas.DataFrame`:** If `wavelengths=None`, `MSPA` automatically parses numerical wavelengths from the column headers (e.g., `"WL_401"`, `"401"`, or `"401.0 nm"`).
+- **With a `numpy.ndarray`:** Pass the 1D `wavelengths` array explicitly so `MSPA` can locate the optical sub-windows and detect atmospheric excision jumps.
 
 ```python
 # Using raw NumPy arrays with an explicit wavelength vector
@@ -118,8 +127,8 @@ reducer_df = MSPA(n_components=64).set_output(transform="pandas")
 df_train_mspa = reducer_df.fit_transform(X_train, y_train)
 
 print(type(df_train_mspa))
-print("Module 3 (Canonical) sample :", df_train_mspa.columns[:3].tolist())
-print("Module 2 (Windows) sample   :", df_train_mspa.columns.tolist())
+print("Module 3 (Canonical) sample  :", df_train_mspa.columns[:3].tolist())
+print("Module 2 (Windows) sample    :", df_train_mspa.columns[24:27].tolist())
 print("Module 1 (Biophysical) sample:", df_train_mspa.columns[-3:].tolist())
 ```
 
@@ -211,7 +220,7 @@ If you use `MSPA` in your research, please cite:
 
 ```bibtex
 @article{Osco2026MSPA,
-  author  = {Osco, Lucas Prado, et al.},
+  author  = {Osco, Lucas Prado and others},
   title   = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Reflectance Spectroscopy},
   journal = {Submitted Manuscript},
   year    = {2026}
