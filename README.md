@@ -219,7 +219,7 @@ print("MIR projected shape:", Z_mir.shape)  # (200, 64)
 If you use `MSPA` in your research, please cite:
 
 ```bibtex
-@article{Osco2026MSPA,
+@article{MSPA2026,
   author  = {Osco, Lucas Prado and others},
   title   = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Reflectance Spectroscopy},
   journal = {Submitted Manuscript},
