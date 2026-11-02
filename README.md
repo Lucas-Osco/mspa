@@ -15,7 +15,7 @@ Conventional dimensionality reduction techniques, such as Principal Component An
 
 You can test `MSPA` directly in your browser without installing anything locally using our interactive notebook with synthetic foliar reflectance spectra:
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb) **[Launch `MSPA_Colab_Tutorial.ipynb` in Google Colab](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb)**
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lucas-Osco/mspa/blob/main/MSPA_Colab_Tutorial.ipynb)
 
 ---
 
