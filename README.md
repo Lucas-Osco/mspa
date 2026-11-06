@@ -25,13 +25,13 @@ Test `MSPA` directly in your browser without installing anything locally using o
 
 ## Why Standard Reducers Fail on Spectra: The Column-Permutation Problem
 
-Let $\mathbf{X} \in \mathbb{R}^{N \times D}$ be a spectral matrix ordered along physical wavelengths $\lambda_1 < \lambda_2 < \dots < \lambda_D$, and let $\mathbf{\Pi} \in \{0, 1\}^{D \times D}$ be an arbitrary permutation matrix that randomly shuffles the order of the wavelengths ($\mathbf{X}_{\mathbf{\Pi}} = \mathbf{X}\mathbf{\Pi}$).
+Let $`\mathbf{X} \in \mathbb{R}^{N \times D}`$ be a spectral matrix ordered along physical wavelengths $`\lambda_1 < \lambda_2 < \dots < \lambda_D`$, and let $`\mathbf{\Pi} \in \{0, 1\}^{D \times D}`$ be an arbitrary permutation matrix that randomly shuffles the order of the wavelengths ($`\mathbf{X}_{\mathbf{\Pi}} = \mathbf{X}\mathbf{\Pi}`$).
 
-In standard `PCA`, the sample covariance matrix of the shuffled spectrum is $\mathbf{\Sigma}_{\mathbf{\Pi}} = \mathbf{\Pi}^\top \mathbf{\Sigma} \mathbf{\Pi}$, which simply permutes the rows of the eigenvectors ($\mathbf{V}_{\mathbf{\Pi}} = \mathbf{\Pi}^\top \mathbf{V}$). Consequently, the projected scores remain **numerically identical**:
+In standard `PCA`, the sample covariance matrix of the shuffled spectrum is $`\mathbf{\Sigma}_{\mathbf{\Pi}} = \mathbf{\Pi}^\top \mathbf{\Sigma} \mathbf{\Pi}`$, which simply permutes the rows of the eigenvectors ($`\mathbf{V}_{\mathbf{\Pi}} = \mathbf{\Pi}^\top \mathbf{V}`$). Consequently, the projected scores remain **numerically identical**:
 
 $$\mathbf{Z}_{\text{PCA}}(\mathbf{X}\mathbf{\Pi}) = (\mathbf{X}\mathbf{\Pi})(\mathbf{\Pi}^\top \mathbf{V}_K) = \mathbf{X}(\mathbf{\Pi}\mathbf{\Pi}^\top)\mathbf{V}_K = \mathbf{Z}_{\text{PCA}}(\mathbf{X})$$
 
-The exact same invariance holds for `PLS-DA` (via inner products $\mathbf{X}^\top \mathbf{Y}$), `UMAP`, and `SOM` (via pairwise Euclidean distances $\Vert{}\mathbf{x}_i \mathbf{\Pi} - \mathbf{x}_l \mathbf{\Pi}\Vert{}_2 = \Vert{}\mathbf{x}_i - \mathbf{x}_l\Vert{}_2$). Because these methods are blind to wavelength adjacency, high-variance non-diagnostic plateaus (such as leaf albedo in the Near-Infrared plateau) dominate the projection and mask narrow diagnostic absorption features.
+The exact same invariance holds for `PLS-DA` (via inner products $`\mathbf{X}^\top \mathbf{Y}`$), `UMAP`, and `SOM` (via pairwise Euclidean distances $`\Vert{}\mathbf{x}_i \mathbf{\Pi} - \mathbf{x}_l \mathbf{\Pi}\Vert{}_2 = \Vert{}\mathbf{x}_i - \mathbf{x}_l\Vert{}_2`$). Because these methods are blind to wavelength adjacency, high-variance non-diagnostic plateaus (such as leaf albedo in the Near-Infrared plateau) dominate the projection and mask narrow diagnostic absorption features.
 
 You can verify this directly in Python:
 
@@ -59,41 +59,51 @@ print("Mean MSPA difference after shuffling wavelengths:", np.mean(np.abs(z_mspa
 
 ## Mathematical Formulation: Inside the Three Modules of `MSPA`
 
-First, `MSPA` automatically detects any excised atmospheric water-vapor gaps in $\boldsymbol{\lambda}$ (where $\lambda_{j+1} - \lambda_j > 5 \cdot \text{median}(\Delta\lambda)$) to partition the spectrum into contiguous blocks $\mathcal{S}_1, \dots, \mathcal{S}_B$. Within each contiguous block $\mathcal{S}_b$, analytical local least-squares Savitzky–Golay convolution estimates the **1st derivative** ($\mathbf{X}^{(1)} \approx \partial \mathbf{X} / \partial \lambda$, local slope) and **2nd derivative** ($\mathbf{X}^{(2)} \approx \partial^2 \mathbf{X} / \partial \lambda^2$, local concavity) without crossing gap boundaries.
+First, `MSPA` automatically detects any excised atmospheric water-vapor gaps in $`\boldsymbol{\lambda}`$ (where $`\lambda_{j+1} - \lambda_j > 5 \cdot \text{median}(\Delta\lambda)`$) to partition the spectrum into contiguous blocks $`\mathcal{S}_1, \dots, \mathcal{S}_B`$. Within each contiguous block $`\mathcal{S}_b`$, analytical local least-squares Savitzky–Golay convolution estimates the **1st derivative** ($`\mathbf{X}^{(1)} \approx \partial \mathbf{X} / \partial \lambda`$, local slope) and **2nd derivative** ($`\mathbf{X}^{(2)} \approx \partial^2 \mathbf{X} / \partial \lambda^2`$, local concavity) without crossing gap boundaries.
 
-The input spectrum $\mathbf{x}_i \in \mathbb{R}^D$ is then projected into $\mathbf{z}_i = [\mathbf{z}_{i,\text{can}}^\top, \, \mathbf{z}_{i,\text{win}}^\top, \, \mathbf{z}_{i,\text{bio}}^\top]^\top \in \mathbb{R}^K$ across three complementary modules:
+The input spectrum $`\mathbf{x}_i \in \mathbb{R}^D`$ is then projected into $`\mathbf{z}_i = [\mathbf{z}_{i,\text{can}}^\top, \mathbf{z}_{i,\text{win}}^\top, \mathbf{z}_{i,\text{bio}}^\top]^\top \in \mathbb{R}^K`$ across three complementary modules:
 
 ### 1. Module 1 — Additive Continuum-Removed Geometry & Inflection Kinematics (`MSPA_BIO_*`, 16 vars)
 
-In reflectance spectroscopy, biochemical absorption features appear as local concave valleys bounded by scattering shoulders. Across each absorption valley $\mathcal{V}_v = [\lambda_{v,\text{start}}, \lambda_{v,\text{end}}]$ ($L_v$ bands), `MSPA` constructs the linear continuum chord $c_{i,v}(\lambda_j)$ connecting the valley shoulders ($t_j \in [0, 1]$):
+In reflectance spectroscopy, biochemical absorption features appear as local concave valleys bounded by scattering shoulders. Across each absorption valley $`\mathcal{V}_v = [\lambda_{v,\text{start}}, \lambda_{v,\text{end}}]`$ ($`L_v`$ bands), `MSPA` constructs the linear continuum chord $`c_{i,v}(\lambda_j)`$ connecting the valley shoulders ($`t_j \in [0, 1]`$):
 
-$$c_{i,v}(\lambda_j) = x_i(\lambda_{v,\text{start}})(1 - t_j) + x_i(\lambda_{v,\text{end}})t_j, \quad \text{and} \quad d_{i,v}(\lambda_j) = c_{i,v}(\lambda_j) - x_i(\lambda_j)$$
+$$
+c_{i,v}(\lambda_j) = x_i(\lambda_{v,\text{start}})(1 - t_j) + x_i(\lambda_{v,\text{end}})t_j, \qquad d_{i,v}(\lambda_j) = c_{i,v}(\lambda_j) - x_i(\lambda_j)
+$$
 
-When spectra are standardized via Standard Normal Variate ($x_{i,j} = [r_{i,j} - \mu_i]/\sigma_i$), the additive residual $d_{i,v}(\lambda_j)$ cancels out baseline brightness ($\mu_i$) and normalizes the band depth by the global radiometric contrast ($\sigma_i$) while avoiding division-by-zero singularities where $c_{i,v}(\lambda_j) \approx 0$. From each valley $v$, Module 1 extracts the **maximum contrast depth** ($D_{\max, i, v}$) and **integrated absorption area** ($A_{\text{abs}, i, v}$), alongside the **Red-Edge inflection wavelength centroid** ($\lambda_{\text{RE}, i}$):
+When spectra are standardized via Standard Normal Variate ($`x_{i,j} = [r_{i,j} - \mu_i]/\sigma_i`$), the additive residual $`d_{i,v}(\lambda_j)`$ cancels out baseline brightness ($`\mu_i`$) and normalizes the band depth by the global radiometric contrast ($`\sigma_i`$) while avoiding division-by-zero singularities where $`c_{i,v}(\lambda_j) \approx 0`$. From each valley $`v`$, Module 1 extracts the **maximum contrast depth** ($`D_{\max, i, v}`$) and **integrated absorption area** ($`A_{\text{abs}, i, v}`$), alongside the **Red-Edge inflection wavelength centroid** ($`\lambda_{\text{RE}, i}`$):
 
-$$D_{\max, i, v} = \max_{\lambda_j \in \mathcal{V}_v} d_{i,v}(\lambda_j), \qquad A_{\text{abs}, i, v} = \frac{1}{L_v} \sum_{\lambda_j \in \mathcal{V}_v} d_{i,v}(\lambda_j), \qquad \lambda_{\text{RE}, i} = \frac{\sum_{\lambda_j \in \mathcal{W}_{\text{RE}}} \max\!\left(x_{i,j}^{(1)}, 0\right) \lambda_j}{\sum_{\lambda_j \in \mathcal{W}_{\text{RE}}} \max\!\left(x_{i,j}^{(1)}, 0\right) + \epsilon}$$
+$$
+D_{\max, i, v} = \max_{\lambda_j \in \mathcal{V}_v} d_{i,v}(\lambda_j), \qquad A_{\text{abs}, i, v} = \frac{1}{L_v} \sum_{\lambda_j \in \mathcal{V}_v} d_{i,v}(\lambda_j), \qquad \lambda_{\text{RE}, i} = \frac{\sum_{\lambda_j \in \mathcal{W}_{\text{RE}}} \max(x_{i,j}^{(1)}, 0) \lambda_j}{\sum_{\lambda_j \in \mathcal{W}_{\text{RE}}} \max(x_{i,j}^{(1)}, 0) + \epsilon}
+$$
 
-Because $\max(\cdot)$ and horizontal wavelength shifts ($\lambda_{\text{RE}}$) are **nonlinear functionals**, Module 1 captures absorption band shifts (e.g., chlorotic blue-shifts) that cannot be represented by purely linear matrix projections.
+Because $`\max(\cdot)`$ and horizontal wavelength shifts ($`\lambda_{\text{RE}}`$) are **nonlinear functionals**, Module 1 captures absorption band shifts (e.g., chlorotic blue-shifts) that cannot be represented by purely linear matrix projections.
 
 ### 2. Module 2 — Local Multi-Order Sub-Window Eigenmodes (`MSPA_WIN_*`, 24 vars)
 
-To prevent high-variance spectral plateaus from masking subtle variations in narrower regions, Module 2 partitions the spectrum into $W = 8$ contiguous optical sub-windows $\mathcal{W}_1, \dots, \mathcal{W}_8$ (or uniform sub-windows when operating outside $380\text{--}2500\text{ nm}$). Within each window $w$ and for each differential order $m \in \{0, 1, 2\}$ independently, the standardized sub-matrix $\tilde{\mathbf{X}}_{\text{train}, w}^{(m)}$ is decomposed via Singular Value Decomposition (SVD) to project each sample onto the dominant rank-1 right singular vector $\mathbf{v}_{w,1}^{(m)}$:
+To prevent high-variance spectral plateaus from masking subtle variations in narrower regions, Module 2 partitions the spectrum into $`W = 8`$ contiguous optical sub-windows $`\mathcal{W}_1, \dots, \mathcal{W}_8`$ (or uniform sub-windows when operating outside $`380\text{--}2500\text{ nm}`$). Within each window $`w`$ and for each differential order $`m \in \{0, 1, 2\}`$ independently, the standardized sub-matrix $`\tilde{\mathbf{X}}_{\text{train}, w}^{(m)}`$ is decomposed via Singular Value Decomposition (SVD) to project each sample onto the dominant rank-1 right singular vector $`\mathbf{v}_{w,1}^{(m)}`$:
 
-$$z_{i,\text{win}}^{(w, m)} = \left(\tilde{\mathbf{x}}_{i, w}^{(m)}\right)^\top \mathbf{v}_{w, 1}^{(m)}, \qquad w \in \{1, \dots, 8\}, \quad m \in \{0, 1, 2\}$$
+$$
+z_{i,\text{win}}^{(w, m)} = \left(\tilde{\mathbf{x}}_{i, w}^{(m)}\right)^\top \mathbf{v}_{w, 1}^{(m)}, \qquad w \in \{1, \dots, 8\}, \quad m \in \{0, 1, 2\}
+$$
 
-This guarantees that every spectral region contributes its primary mode of **amplitude** ($m=0$), **slope** ($m=1$), and **concavity** ($m=2$) ($8 \times 3 = 24$ variables).
+This guarantees that every spectral region contributes its primary mode of **amplitude** ($`m=0`$), **slope** ($`m=1`$), and **concavity** ($`m=2`$) ($`8 \times 3 = 24`$ variables).
 
 ### 3. Module 3 — Global Fisher-Weighted Shrinkage Canonical Subspace (`MSPA_CAN_*`, 24 vars)
 
-To capture global cross-wavelength interactions where signatures diverge across classes $c \in \{1, \dots, C\}$, Module 3 concatenates the full state space $\mathbf{M}_i = [\mathbf{x}_i^{(0)\top}, \, \mathbf{x}_i^{(1)\top}, \, \mathbf{x}_i^{(2)\top}]^\top \in \mathbb{R}^{3D}$ and weights each channel $q \in \{1, \dots, 3D\}$ by its inter-class to intra-class Fisher discriminability ratio $\omega_q$:
+To capture global cross-wavelength interactions where signatures diverge across classes $`c \in \{1, \dots, C\}`$, Module 3 concatenates the full state space $`\mathbf{M}_i = [\mathbf{x}_i^{(0)\top}, \mathbf{x}_i^{(1)\top}, \mathbf{x}_i^{(2)\top}]^\top \in \mathbb{R}^{3D}`$ and weights each channel $`q \in \{1, \dots, 3D\}`$ by its inter-class to intra-class Fisher discriminability ratio $`\omega_q`$:
 
-$$\tilde{\omega}_q = \sqrt{\frac{\text{Std}_{c \in \{1,\dots,C\}}(\mu_{c,q})}{\frac{1}{C}\sum_{c=1}^{C} \sigma_{c,q} + \delta}}, \qquad \mathbf{H} = \tilde{\mathbf{M}} \, \text{diag}(\omega_1, \dots, \omega_{3D})$$
+$$
+\tilde{\omega}_q = \sqrt{\frac{\text{Std}_{c}(\mu_{c,q})}{\frac{1}{C}\sum_{c=1}^{C} \sigma_{c,q} + \delta}}, \qquad \mathbf{H} = \tilde{\mathbf{M}} \, \text{diag}(\omega_1, \dots, \omega_{3D})
+$$
 
-After orthogonal SVD compression of $\mathbf{H}$ into $\mathbf{U}$, canonical discriminant directions $\mathbf{w}$ are extracted via analytical Ledoit–Wolf covariance shrinkage ($\gamma = 0.35$):
+After orthogonal SVD compression of $`\mathbf{H}`$ into $`\mathbf{U}`$, canonical discriminant directions $`\mathbf{w}`$ are extracted via analytical Ledoit–Wolf covariance shrinkage ($`\gamma = 0.35`$):
 
-$$\mathbf{\Sigma}_W^{(\gamma)} = (1 - \gamma)\mathbf{S}_W + \gamma \frac{\text{Tr}(\mathbf{S}_W)}{P}\mathbf{I}_P, \qquad \mathbf{\Sigma}_B \mathbf{w} = \Lambda \mathbf{\Sigma}_W^{(\gamma)} \mathbf{w}$$
+$$
+\mathbf{\Sigma}_W^{(\gamma)} = (1 - \gamma)\mathbf{S}_W + \gamma \frac{\text{Tr}(\mathbf{S}_W)}{P}\mathbf{I}_P, \qquad \mathbf{\Sigma}_B \mathbf{w} = \Lambda \mathbf{\Sigma}_W^{(\gamma)} \mathbf{w}
+$$
 
-When $C - 1 < K_{\text{can}}$ (e.g., binary classification $C=2$ where $\text{rank}(\mathbf{\Sigma}_B) = 1$), `MSPA` extracts regularized discriminant axes separately for Orders $0, 1, 2$, and $\mathbf{H}$, and completes the remaining axes using singular-value-scaled orthogonal vectors of $\mathbf{H}$, preventing rank-1 noise overfitting.
+When $`C - 1 < K_{\text{can}}`$ (e.g., binary classification $`C=2`$ where $`\text{rank}(\mathbf{\Sigma}_B) = 1`$), `MSPA` extracts regularized discriminant axes separately for Orders $`0, 1, 2`$, and $`\mathbf{H}`$, and completes the remaining axes using singular-value-scaled orthogonal vectors of $`\mathbf{H}`$, preventing rank-1 noise overfitting.
 
 ---
 
