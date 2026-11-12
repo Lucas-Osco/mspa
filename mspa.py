@@ -1,8 +1,14 @@
 """
 MSPA: Morpho-Spectral Projection Analysis
 =========================================
-Supervised dimensionality reduction operator for contiguous 1D reflectance,
-transmittance, or absorbance spectra, compatible with scikit-learn pipelines.
+Supervised dimensionality reduction operator for contiguous 1D plant reflectance
+spectra across the VNIR-SWIR domain (350-2500 nm), compatible with scikit-learn.
+
+Reference:
+Osco, L. P., Silva, M. S., Silva, F. V., Zhao, L., Ramos, A. P. M.,
+Ferreira, E. J., Bendahan, A. B., & Jorge, L. A. C. (2026).
+Morpho-Spectral Projection Analysis (MSPA) for Plant Spectroscopy.
+IEEE Transactions on Geoscience and Remote Sensing.
 
 Author: Lucas Prado Osco et al. (2026)
 License: MIT
@@ -24,8 +30,8 @@ __version__ = "1.0.0"
 
 def kneedle_breaking_point(y_curve: np.ndarray) -> int:
     """
-    Computes the 1-based index of maximum curvature (Kneedle algorithm)
-    on a discrete monotonic curve.
+    Computes the 1-based index of maximum perpendicular deflection distance
+    (Kneedle algorithm) on a discrete cumulative energy curve.
     """
     n_pts = len(y_curve)
     if n_pts <= 2:
@@ -41,9 +47,8 @@ def kneedle_breaking_point(y_curve: np.ndarray) -> int:
 
 def _svd_orthogonal_basis(X_centered: np.ndarray, n_components: int):
     """
-    Extracts the top `n_components` right singular vectors (Karhunen-Loeve orthogonal
-    functional basis) and explained energy ratios via exact Singular Value Decomposition
-    (SVD) with deterministic sign alignment.
+    Extracts the top `n_components` right singular vectors and explained energy
+    ratios via Singular Value Decomposition (SVD) with deterministic sign alignment.
     """
     U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
     max_abs_cols = np.argmax(np.abs(U), axis=0)
@@ -60,40 +65,38 @@ def _svd_orthogonal_basis(X_centered: np.ndarray, n_components: int):
 
 class MSPA(BaseEstimator, TransformerMixin):
     """
-    Morpho-Spectral Projection Analysis (MSPA).
+    Morpho-Spectral Projection Analysis (MSPA) for Plant Spectroscopy.
 
-    Supervised dimensionality reduction operator designed for 1D contiguous spectral
-    signals (reflectance, transmittance, or absorbance). Preserves the sequential
-    physical ordering of wavelengths through three complementary blocks:
-      - Module 1 (Biophysical & Inflection Geometry): Continuum-removed maximum band
-        depth and integrated absorption area across major absorption valleys, coupled
-        with 1st and 2nd derivative inflection kinematics and plateau contrasts.
-      - Module 2 (Local Multi-Order Sub-Window Eigenmodes): Dominant 1D singular
-        basis projections of Order 0 (amplitude), Order 1 (slope), and Order 2
-        (concavity) extracted independently within contiguous spectral sub-windows.
-      - Module 3 (Global Fisher-Weighted Canonical Subspace): Multi-order state space
-        [X^(0), X^(1), X^(2)] weighted by inter/intra-class Fisher discriminability
-        and projected via Ledoit-Wolf shrinkage-regularized discriminant analysis
-        (with rank-safe singular-value-scaled orthogonal completion when C - 1 < K_can).
+    Supervised dimensionality reduction operator designed for contiguous 1D plant
+    reflectance spectra across the VNIR-SWIR domain (350-2500 nm). Breaks column-
+    permutation invariance through three complementary mathematical modules:
+      - Module 1 (Biophysical Hull & Inflection Kinematics, 16 vars): Additive
+        continuum-removed maximum band depth (D_max) and integrated absorption
+        area (A_abs) across 5 major foliar valleys (V1-V5), coupled with 1st and
+        2nd derivative red-edge inflection kinematics (lambda_RE) and plateau contrasts.
+      - Module 2 (Local Multi-Order Sub-Window Eigenmodes, 24 vars): Dominant rank-1
+        SVD projections of Order 0 (amplitude), Order 1 (local slope), and Order 2
+        (local concavity) extracted independently within 8 radiative sub-windows (W1-W8).
+      - Module 3 (Global Fisher-Weighted Canonical Subspace, K_can vars): Coupled
+        differential state space [X^(0), X^(1), X^(2)] weighted by inter/intra-class
+        Fisher discriminability (omega_q) and projected via analytical Ledoit-Wolf
+        shrinkage discriminant analysis with rank-safe orthogonal completion.
 
     Parameters
     ----------
     n_components : int or 'auto', default=64
-        Target number of morpho-spectral variables to retain.
+        Target number of morpho-spectral variables to retain, or 'auto' to estimate
+        the intrinsic dimensionality via the Kneedle maximum-curvature criterion.
     wavelengths : array-like of shape (n_features,), optional (default=None)
-        Wavelengths (in nm) or wavenumbers corresponding to the columns of X.
+        Wavelengths (in nm, within 350-2500 nm) corresponding to the columns of X.
         If None and X is a pandas DataFrame, MSPA automatically parses numerical
-        wavelengths from column names (e.g., 'WL_401', '401.0').
+        wavelengths from column headers (e.g., 'WL_401', '401.0').
     sg_window : int, default=11
         Window length for piecewise Savitzky-Golay derivative calculation.
     sg_poly : int, default=2
         Polynomial order for Savitzky-Golay derivative calculation.
     shrinkage : float, default=0.35
-        Analytical covariance shrinkage parameter in (0, 1) for regularized canonical
-        discriminant extraction in Module 3.
-    n_fallback_windows : int, default=8
-        Number of contiguous sub-windows used when the input spectrum lies outside
-        the 380-2500 nm optical vegetation domain.
+        Analytical Ledoit-Wolf covariance shrinkage parameter in (0, 1) for Module 3.
     random_state : int, default=42
         Random seed for deterministic orientation.
     """
@@ -105,7 +108,6 @@ class MSPA(BaseEstimator, TransformerMixin):
         sg_window: int = 11,
         sg_poly: int = 2,
         shrinkage: float = 0.35,
-        n_fallback_windows: int = 8,
         random_state: int = 42,
     ):
         self.n_components = n_components
@@ -113,7 +115,6 @@ class MSPA(BaseEstimator, TransformerMixin):
         self.sg_window = sg_window
         self.sg_poly = sg_poly
         self.shrinkage = shrinkage
-        self.n_fallback_windows = n_fallback_windows
         self.random_state = random_state
 
     def _resolve_wavelengths_and_segments(self, X, n_features: int):
@@ -135,16 +136,16 @@ class MSPA(BaseEstimator, TransformerMixin):
                 parsed_wl = np.asarray(extracted, dtype=float)
 
         if parsed_wl is None:
-            self.wavelengths_ = np.arange(n_features, dtype=float)
-            self.is_optical_vegetation_domain_ = False
+            self.wavelengths_ = np.linspace(400.0, 2400.0, n_features)
+            self.is_optical_vegetation_domain_ = True
         else:
             self.wavelengths_ = parsed_wl
-            overlap = np.sum((self.wavelengths_ >= 380.0) & (self.wavelengths_ <= 2500.0))
-            self.is_optical_vegetation_domain_ = bool(overlap >= min(30, n_features // 2))
+            overlap = np.sum((self.wavelengths_ >= 350.0) & (self.wavelengths_ <= 2500.0))
+            self.is_optical_vegetation_domain_ = bool(overlap >= min(20, n_features // 2))
 
         diffs = np.abs(np.diff(self.wavelengths_))
-        med_step = float(np.median(diffs)) if len(diffs) > 0 else 1.0
-        gap_threshold = max(5.0 * med_step, 10.0)
+        self.median_step_ = float(np.median(diffs)) if len(diffs) > 0 else 1.0
+        gap_threshold = max(5.0 * self.median_step_, 10.0)
         split_pts = np.where(diffs > gap_threshold)[0] + 1
         segments = np.split(np.arange(n_features), split_pts)
         self.contiguous_segments_ = [seg for seg in segments if len(seg) > 0]
@@ -152,19 +153,22 @@ class MSPA(BaseEstimator, TransformerMixin):
     def _compute_piecewise_derivatives(self, X_arr: np.ndarray):
         X_d1 = np.zeros_like(X_arr, dtype=np.float64)
         X_d2 = np.zeros_like(X_arr, dtype=np.float64)
+        delta = max(self.median_step_, 1e-6)
         for seg in self.contiguous_segments_:
             n_seg = len(seg)
             w_len = min(self.sg_window, n_seg if n_seg % 2 == 1 else n_seg - 1)
             if w_len > self.sg_poly and w_len >= 5:
                 X_d1[:, seg] = savgol_filter(
-                    X_arr[:, seg], window_length=w_len, polyorder=self.sg_poly, deriv=1, axis=1
+                    X_arr[:, seg], window_length=w_len, polyorder=self.sg_poly,
+                    deriv=1, delta=delta, axis=1
                 )
                 X_d2[:, seg] = savgol_filter(
-                    X_arr[:, seg], window_length=w_len, polyorder=self.sg_poly, deriv=2, axis=1
+                    X_arr[:, seg], window_length=w_len, polyorder=self.sg_poly,
+                    deriv=2, delta=delta, axis=1
                 )
             elif n_seg >= 3:
-                X_d1[:, seg] = np.gradient(X_arr[:, seg], axis=1)
-                X_d2[:, seg] = np.gradient(X_d1[:, seg], axis=1)
+                X_d1[:, seg] = np.gradient(X_arr[:, seg], delta, axis=1)
+                X_d2[:, seg] = np.gradient(X_d1[:, seg], delta, axis=1)
         return X_d1, X_d2
 
     @staticmethod
@@ -181,68 +185,77 @@ class MSPA(BaseEstimator, TransformerMixin):
         wl = self.wavelengths_
         min_bands = 6
 
-        if self.is_optical_vegetation_domain_:
-            candidate_windows = [
-                ("Blue_Carot", (wl >= 400) & (wl <= 510)),
-                ("Green_Anth", (wl >= 511) & (wl <= 620)),
-                ("Red_Chl", (wl >= 621) & (wl <= 685)),
-                ("Red_Edge", (wl >= 686) & (wl <= 765)),
-                ("NIR_Mesophyll", (wl >= 766) & (wl <= 910)),
-                ("NIR_Water", (wl >= 911) & (wl <= 1350)),
-                ("SWIR1_Lignin", (wl >= 1450) & (wl <= 1790)),
-                ("SWIR2_Cellulose", (wl >= 1980) & (wl <= 2450)),
-            ]
-            candidate_valleys = [
-                ("Chl", (wl >= 560) & (wl <= 740)),
-                ("NIR_W1", (wl >= 910) & (wl <= 1060)),
-                ("NIR_W2", (wl >= 1130) & (wl <= 1280)),
-                ("SWIR1", (wl >= 1520) & (wl <= 1760)),
-                ("SWIR2", (wl >= 2050) & (wl <= 2360)),
-            ]
-            windows = [(nm, np.where(mask)[0]) for nm, mask in candidate_windows if int(np.sum(mask)) >= min_bands]
-            valleys = [(nm, np.where(mask)[0]) for nm, mask in candidate_valleys if int(np.sum(mask)) >= min_bands]
-        else:
-            windows, valleys = [], []
+        candidate_windows = [
+            ("Blue_Carot",      (wl >= 400) & (wl <= 510),  "400-510 nm"),
+            ("Green_Anth",      (wl >= 511) & (wl <= 620),  "511-620 nm"),
+            ("Red_Chl",         (wl >= 621) & (wl <= 685),  "621-685 nm"),
+            ("Red_Edge",        (wl >= 686) & (wl <= 765),  "686-765 nm"),
+            ("NIR_Mesophyll",   (wl >= 766) & (wl <= 910),  "766-910 nm"),
+            ("NIR_Water",       (wl >= 911) & (wl <= 1350), "911-1350 nm"),
+            ("SWIR1_Lignin",    (wl >= 1450) & (wl <= 1790),"1450-1790 nm"),
+            ("SWIR2_Cellulose", (wl >= 1980) & (wl <= 2450),"1980-2450 nm"),
+        ]
+        candidate_valleys = [
+            ("Chl",    (wl >= 560) & (wl <= 740),   "560-740 nm"),
+            ("NIR_W1", (wl >= 910) & (wl <= 1060),  "910-1060 nm"),
+            ("NIR_W2", (wl >= 1130) & (wl <= 1280), "1130-1280 nm"),
+            ("SWIR1",  (wl >= 1520) & (wl <= 1760), "1520-1760 nm"),
+            ("SWIR2",  (wl >= 2050) & (wl <= 2360), "2050-2360 nm"),
+        ]
+
+        windows = [
+            (nm, np.where(mask)[0], rng_str)
+            for nm, mask, rng_str in candidate_windows
+            if int(np.sum(mask)) >= min_bands
+        ]
+        valleys = [
+            (nm, np.where(mask)[0], rng_str)
+            for nm, mask, rng_str in candidate_valleys
+            if int(np.sum(mask)) >= min_bands
+        ]
 
         if len(windows) < 2:
-            n_w = min(self.n_fallback_windows, max(2, n_features // 10))
-            splits = np.array_split(np.arange(n_features), n_w)
-            windows = [(f"Win{i+1:02d}", s) for i, s in enumerate(splits) if len(s) >= 3]
-
+            splits = np.array_split(np.arange(n_features), min(8, max(2, n_features // 10)))
+            windows = [
+                (f"Win{i+1:02d}", s, f"{wl[s[0]]:.0f}-{wl[s[-1]]:.0f} nm")
+                for i, s in enumerate(splits) if len(s) >= 3
+            ]
         if len(valleys) == 0:
-            valleys = [(f"Val{i+1:02d}", idx) for i, (_, idx) in enumerate(windows[:min(5, len(windows))])]
+            valleys = [
+                (f"Val{i+1:02d}", idx, rng_str)
+                for i, (_, idx, rng_str) in enumerate(windows[:min(5, len(windows))])
+            ]
 
         self.active_windows_ = windows
         self.active_valleys_ = valleys
 
-        re_mask = (wl >= 680) & (wl <= 760) if self.is_optical_vegetation_domain_ else np.zeros(n_features, dtype=bool)
+        re_mask = (wl >= 680) & (wl <= 760)
         if int(np.sum(re_mask)) >= min_bands:
             self.inflection_idx_ = np.where(re_mask)[0]
         else:
             self.inflection_idx_ = windows[min(1, len(windows) - 1)][1]
 
-        m_green = (wl >= 530) & (wl <= 570) if self.is_optical_vegetation_domain_ else np.zeros(n_features, dtype=bool)
-        m_red = (wl >= 650) & (wl <= 685) if self.is_optical_vegetation_domain_ else np.zeros(n_features, dtype=bool)
-        m_nir = (wl >= 780) & (wl <= 900) if self.is_optical_vegetation_domain_ else np.zeros(n_features, dtype=bool)
+        m_green = (wl >= 530) & (wl <= 570)
+        m_red   = (wl >= 650) & (wl <= 685)
+        m_nir   = (wl >= 780) & (wl <= 900)
 
         if int(np.sum(m_green)) >= 3 and int(np.sum(m_red)) >= 3 and int(np.sum(m_nir)) >= 3:
             self.contrast_triplets_ = (np.where(m_green)[0], np.where(m_red)[0], np.where(m_nir)[0])
         elif len(windows) >= 3:
-            self.contrast_triplets_ = (
-                windows[0][1],
-                windows[1][1],
-                windows[min(2, len(windows) - 1)][1],
-            )
+            self.contrast_triplets_ = (windows[0][1], windows[1][1], windows[min(2, len(windows) - 1)][1])
         else:
             self.contrast_triplets_ = None
 
     def _extract_module1_biophysical(self, X_arr: np.ndarray, X_d1: np.ndarray, X_d2: np.ndarray):
-        feats = []
-        names = []
-        for v_name, v_idx in self.active_valleys_:
+        feats, names, meta = [], [], []
+        for v_name, v_idx, v_rng in self.active_valleys_:
             d_max, a_abs = self._continuum_removed_depth_and_area(X_arr[:, v_idx])
             feats.extend([d_max, a_abs])
             names.extend([f"MSPA_BIO_Dmax_{v_name}", f"MSPA_BIO_Area_{v_name}"])
+            meta.extend([
+                ("Module 1 (Biophysical Hull)", "Order 0 (Continuum Depth)", v_rng),
+                ("Module 1 (Biophysical Hull)", "Order 0 (Continuum Area)",  v_rng),
+            ])
 
         inf_idx = self.inflection_idx_
         wl_inf = self.wavelengths_[inf_idx]
@@ -263,6 +276,13 @@ class MSPA(BaseEstimator, TransformerMixin):
             "MSPA_BIO_Inflect_LambdaCentroid",
             "MSPA_BIO_Inflect_ConcavityAmp",
         ])
+        re_rng = f"{wl_inf[0]:.0f}-{wl_inf[-1]:.0f} nm"
+        meta.extend([
+            ("Module 1 (Biophysical Hull)", "Order 1 (Max Slope S_max)",       re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 1 (Mean Slope S_bar)",      re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 1 (Inflection Centroid λ_RE)", re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 2 (Concavity Wave C_amp)",  re_rng),
+        ])
 
         if self.contrast_triplets_ is not None:
             idx_g, idx_r, idx_n = self.contrast_triplets_
@@ -271,8 +291,12 @@ class MSPA(BaseEstimator, TransformerMixin):
             mean_n = np.mean(X_arr[:, idx_n], axis=1, keepdims=True)
             feats.extend([mean_n - mean_r, mean_g - mean_r])
             names.extend(["MSPA_BIO_Contrast_NIR_Red", "MSPA_BIO_Contrast_Green_Red"])
+            meta.extend([
+                ("Module 1 (Biophysical Hull)", "Order 0 (Plateau Contrast)", "780-900 vs 650-685 nm"),
+                ("Module 1 (Biophysical Hull)", "Order 0 (Peak Contrast)",    "530-570 vs 650-685 nm"),
+            ])
 
-        return np.hstack(feats), names
+        return np.hstack(feats), names, meta
 
     def _fit_safe_shrinkage_lda(self, X_in: np.ndarray, y: np.ndarray, n_comp: int, shrinkage_val: float):
         n_cls = len(np.unique(y))
@@ -298,7 +322,7 @@ class MSPA(BaseEstimator, TransformerMixin):
         return np.std(centroids, axis=0) / within_std
 
     def fit(self, X, y):
-        """Fits the MSPA projection model on training spectra X and class labels y."""
+        """Fits the MSPA projection operator on training spectra X and discrete class labels y."""
         if y is None:
             raise ValueError("MSPA is a supervised projection operator and requires class labels `y` in `fit(X, y)`.")
 
@@ -321,17 +345,16 @@ class MSPA(BaseEstimator, TransformerMixin):
         self._configure_domains(n_features)
         X_d1, X_d2 = self._compute_piecewise_derivatives(X_arr)
 
-        # 1. Module 1: Biophysical Continuum-Removal & Inflection Descriptors
-        F_bio_tr, bio_names = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
+        # 1. Module 1: Biophysical Continuum-Removed & Inflection Descriptors (Variables 1..16)
+        F_bio_tr, bio_names, bio_meta = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
         self.scaler_bio_ = StandardScaler().fit(F_bio_tr)
         Z_bio_tr = self.scaler_bio_.transform(F_bio_tr)
         n_mod1 = Z_bio_tr.shape[1]
 
-        # 2. Module 2: Local Multi-Order Sub-Window Eigenmodes (Rank-1 SVD per Order & Window)
+        # 2. Module 2: Local Multi-Order Sub-Window Eigenmodes (Variables 17..40)
         self.window_projectors_ = []
-        F_win_list = []
-        win_names = []
-        for w_name, w_idx in self.active_windows_:
+        F_win_list, win_names, win_meta = [], [], []
+        for w_name, w_idx, w_rng in self.active_windows_:
             sc_0 = StandardScaler().fit(X_arr[:, w_idx])
             sc_1 = StandardScaler().fit(X_d1[:, w_idx])
             sc_2 = StandardScaler().fit(X_d2[:, w_idx])
@@ -340,16 +363,21 @@ class MSPA(BaseEstimator, TransformerMixin):
             X1_w = sc_1.transform(X_d1[:, w_idx])
             X2_w = sc_2.transform(X_d2[:, w_idx])
 
-            v0, _ = _svd_orthogonal_basis(X0_w, 1)
-            v1, _ = _svd_orthogonal_basis(X1_w, 1)
-            v2, _ = _svd_orthogonal_basis(X2_w, 1)
+            v0, ev0 = _svd_orthogonal_basis(X0_w, 1)
+            v1, ev1 = _svd_orthogonal_basis(X1_w, 1)
+            v2, ev2 = _svd_orthogonal_basis(X2_w, 1)
 
-            self.window_projectors_.append((w_idx, sc_0, v0, sc_1, v1, sc_2, v2))
+            self.window_projectors_.append((w_name, w_idx, sc_0, v0, float(ev0[0]), sc_1, v1, float(ev1[0]), sc_2, v2, float(ev2[0])))
             F_win_list.append(np.hstack([X0_w @ v0.T, X1_w @ v1.T, X2_w @ v2.T]))
             win_names.extend([
                 f"MSPA_WIN_{w_name}_Ord0",
                 f"MSPA_WIN_{w_name}_Ord1",
                 f"MSPA_WIN_{w_name}_Ord2",
+            ])
+            win_meta.extend([
+                ("Module 2 (Local Window SVD)", "Order 0 (Amplitude Mode)", w_rng),
+                ("Module 2 (Local Window SVD)", "Order 1 (Slope Mode)",     w_rng),
+                ("Module 2 (Local Window SVD)", "Order 2 (Concavity Mode)", w_rng),
             ])
 
         F_win_tr = np.hstack(F_win_list)
@@ -357,7 +385,7 @@ class MSPA(BaseEstimator, TransformerMixin):
         Z_win_tr = self.scaler_win_.transform(F_win_tr)
         n_mod2 = Z_win_tr.shape[1]
 
-        # 3. Module 3: Global Fisher-Weighted Multi-Order Canonical Subspace
+        # 3. Module 3: Global Fisher-Weighted Multi-Order Canonical Subspace (Variables 41..64)
         X_multi_all = np.hstack([X_arr, X_d1, X_d2])
         self.scaler_multi_ = StandardScaler().fit(X_multi_all)
         X_multi_sc = self.scaler_multi_.transform(X_multi_all)
@@ -372,11 +400,18 @@ class MSPA(BaseEstimator, TransformerMixin):
         self.mu_weighted_ = X_weighted.mean(axis=0, keepdims=True)
         X_w_cent = X_weighted - self.mu_weighted_
 
+        # Kneedle singular energy spectrum on H_train
+        max_probe = min(60, n_samples - 2, X_w_cent.shape[1])
+        _, ev_probe = _svd_orthogonal_basis(X_w_cent, max_probe)
+        cum_var = np.cumsum(ev_probe)
+        y_norm = (cum_var - cum_var[0]) / max(cum_var[-1] - cum_var[0], 1e-12)
+        x_norm = np.linspace(0.0, 1.0, len(y_norm))
+        self.kneedle_energy_curve_ = y_norm
+        self.kneedle_diff_curve_ = y_norm - x_norm
+        self.kneedle_k_can_ = int(np.clip(kneedle_breaking_point(cum_var), 12, 36))
+
         if self.n_components == "auto":
-            max_probe = min(60, n_samples - 2, X_w_cent.shape[1])
-            _, ev_probe = _svd_orthogonal_basis(X_w_cent, max_probe)
-            cum_var = np.cumsum(ev_probe)
-            n_can = int(np.clip(kneedle_breaking_point(cum_var), 12, 36))
+            n_can = self.kneedle_k_can_
             target_total = n_mod1 + n_mod2 + n_can
         elif isinstance(self.n_components, (int, np.integer)) and self.n_components >= 1:
             target_total = int(self.n_components)
@@ -431,24 +466,38 @@ class MSPA(BaseEstimator, TransformerMixin):
             Z_can_tr = np.hstack([z_sup_all, z_forth / self.forth_scale_])
 
         can_names = [f"MSPA_CAN_{i+1:02d}" for i in range(Z_can_tr.shape[1])]
-        Z_full_tr = np.hstack([Z_can_tr, Z_win_tr, Z_bio_tr])
-        all_names = np.asarray(can_names + win_names + bio_names, dtype=object)
+        full_rng_str = f"{self.wavelengths_[0]:.0f}-{self.wavelengths_[-1]:.0f} nm"
+        can_meta = [
+            ("Module 3 (Global Canonical)", "Multi-Order (0, 1, 2)", full_rng_str)
+            for _ in range(Z_can_tr.shape[1])
+        ]
+
+        # Concatenated in didactic manuscript order: Module 1 (1..16) -> Module 2 (17..40) -> Module 3 (41..64)
+        Z_full_tr = np.hstack([Z_bio_tr, Z_win_tr, Z_can_tr])
+        all_names = np.asarray(bio_names + win_names + can_names, dtype=object)
+        all_meta = bio_meta + win_meta + can_meta
+        all_f_scores = self._compute_fisher_scores(Z_full_tr, y_arr)
 
         if Z_full_tr.shape[1] > target_total:
-            f_scores = self._compute_fisher_scores(Z_full_tr, y_arr)
-            top_idx = np.argsort(f_scores)[::-1][:target_total]
+            top_idx = np.argsort(all_f_scores)[::-1][:target_total]
             self.selected_indices_ = np.sort(top_idx)
         else:
             self.selected_indices_ = None
 
-        self.feature_names_out_ = (
-            all_names[self.selected_indices_] if self.selected_indices_ is not None else all_names
-        )
+        if self.selected_indices_ is not None:
+            self.feature_names_out_ = all_names[self.selected_indices_]
+            self.feature_fisher_scores_ = all_f_scores[self.selected_indices_]
+            self.feature_metadata_ = [all_meta[i] for i in self.selected_indices_]
+        else:
+            self.feature_names_out_ = all_names
+            self.feature_fisher_scores_ = all_f_scores
+            self.feature_metadata_ = all_meta
+
         self.n_components_ = len(self.feature_names_out_)
         return self
 
     def transform(self, X) -> np.ndarray:
-        """Projects spectra X into the fitted MSPA morpho-spectral subspace."""
+        """Projects unseen spectra X into the fitted MSPA morpho-spectral subspace."""
         if not hasattr(self, "n_components_"):
             raise ValueError("This MSPA instance is not fitted yet. Call 'fit' before using 'transform'.")
 
@@ -460,13 +509,13 @@ class MSPA(BaseEstimator, TransformerMixin):
 
         X_d1, X_d2 = self._compute_piecewise_derivatives(X_arr)
 
-        # Module 1
-        F_bio, _ = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
+        # Module 1 (Variables 1..16)
+        F_bio, _, _ = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
         Z_bio = self.scaler_bio_.transform(F_bio)
 
-        # Module 2
+        # Module 2 (Variables 17..40)
         F_win_list = []
-        for w_idx, sc_0, v0, sc_1, v1, sc_2, v2 in self.window_projectors_:
+        for _, w_idx, sc_0, v0, _, sc_1, v1, _, sc_2, v2, _ in self.window_projectors_:
             F_win_list.append(np.hstack([
                 sc_0.transform(X_arr[:, w_idx]) @ v0.T,
                 sc_1.transform(X_d1[:, w_idx]) @ v1.T,
@@ -474,7 +523,7 @@ class MSPA(BaseEstimator, TransformerMixin):
             ]))
         Z_win = self.scaler_win_.transform(np.hstack(F_win_list))
 
-        # Module 3
+        # Module 3 (Variables 41..64)
         X_multi_all = np.hstack([X_arr, X_d1, X_d2])
         X_weighted = self.scaler_multi_.transform(X_multi_all) * self.fisher_weights_[None, :]
         X_w_cent = X_weighted - self.mu_weighted_
@@ -495,10 +544,67 @@ class MSPA(BaseEstimator, TransformerMixin):
             z_forth = (X_w_cent @ self.V_fisher_orth_.T) / self.forth_scale_
             Z_can = np.hstack([z0, z1, z2, zc, z_forth])
 
-        Z_full = np.hstack([Z_can, Z_win, Z_bio]).astype(np.float32)
+        Z_full = np.hstack([Z_bio, Z_win, Z_can]).astype(np.float32)
         if self.selected_indices_ is not None:
             return Z_full[:, self.selected_indices_]
         return Z_full
+
+    def compute_structure_loadings(self, X) -> dict[str, np.ndarray]:
+        """
+        Computes the Multi-Order Structure Loading matrices Lambda^(m) in R^(D x K*)
+        for m in {0, 1, 2} and the composite loading footprint |Lambda^comp| (Eq. 10).
+
+        Returns
+        -------
+        dict with keys:
+            - 'Order_0'   : Correlation loading matrix with reflectance X^(0) (D x K*)
+            - 'Order_1'   : Correlation loading matrix with 1st derivative X^(1) (D x K*)
+            - 'Order_2'   : Correlation loading matrix with 2nd derivative X^(2) (D x K*)
+            - 'Composite' : Root-mean-square multi-order loading magnitude (D x K*)
+        """
+        if not hasattr(self, "n_components_"):
+            raise ValueError("Fit MSPA before calling `compute_structure_loadings(X)`.")
+
+        X_arr = np.asarray(X, dtype=np.float64)
+        X_d1, X_d2 = self._compute_piecewise_derivatives(X_arr)
+        Z = np.asarray(self.transform(X_arr), dtype=np.float64)
+
+        Z_std = StandardScaler().fit_transform(Z)
+        n_s = max(1, X_arr.shape[0] - 1)
+
+        L0 = (StandardScaler().fit_transform(X_arr).T @ Z_std) / n_s
+        L1 = (StandardScaler().fit_transform(X_d1).T @ Z_std) / n_s
+        L2 = (StandardScaler().fit_transform(X_d2).T @ Z_std) / n_s
+        L_comp = np.sqrt((L0 ** 2 + L1 ** 2 + L2 ** 2) / 3.0)
+
+        return {
+            "Order_0": L0,
+            "Order_1": L1,
+            "Order_2": L2,
+            "Composite": L_comp,
+        }
+
+    def get_variable_catalog(self) -> pd.DataFrame:
+        """
+        Returns a pandas DataFrame cataloging all retained MSPA variables,
+        their internal module, differential order, spectral support, and Fisher score.
+        """
+        if not hasattr(self, "n_components_"):
+            raise ValueError("Fit MSPA before calling `get_variable_catalog()`.")
+
+        rows = []
+        for idx, (var_name, (mod_name, ord_name, w_rng), f_sc) in enumerate(
+            zip(self.feature_names_out_, self.feature_metadata_, self.feature_fisher_scores_)
+        ):
+            rows.append({
+                "Index": idx + 1,
+                "Variable": var_name,
+                "Module": mod_name,
+                "Differential_Order": ord_name,
+                "Spectral_Support": w_rng,
+                "Training_Fisher_Score": round(float(f_sc), 4),
+            })
+        return pd.DataFrame(rows)
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
         """Returns output feature names for transformation (scikit-learn standard API)."""
@@ -512,11 +618,12 @@ def generate_synthetic_vegetation_spectra(
     random_state: int = 42,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
-    Generates physically realistic synthetic foliar reflectance spectra (SNV-stabilized)
-    across 1,580 bands (401-1330, 1491-1770, 2031-2400 nm) for 3 physiological classes:
+    Generates physically realistic synthetic foliar reflectance spectra (rho in [0, 1],
+    Savitzky-Golay smoothed) across 1,580 bands (401-1330, 1491-1770, 2031-2400 nm)
+    spanning 3 physiological states:
       - Class 0: Healthy Control
-      - Class 1: Early Chlorosis & Red-Edge Blue-Shift (~2.8 nm inflection shift)
-      - Class 2: Vascular & Cell-Wall Alteration (SWIR concavity & water-band shift)
+      - Class 1: Chlorotic Stress (Pigment loss & Red-Edge blue-shift of ~2.8 nm)
+      - Class 2: Structural/Hydric Stress (SWIR lignin/cellulose concavity shift)
 
     Designed for standalone tutorials and Google Colab demonstrations without requiring
     proprietary field data.
@@ -535,15 +642,15 @@ def generate_synthetic_vegetation_spectra(
     X_raw = np.zeros((n_samples, n_bands), dtype=np.float64)
     for i in range(n_samples):
         cls = y[i]
-        nir_albedo = rng.normal(0.52, 0.06)
-        swir1_level = nir_albedo * rng.normal(0.58, 0.05)
-        swir2_level = nir_albedo * rng.normal(0.30, 0.04)
-        global_tilt = rng.normal(0.0, 0.015) * ((wls - 1200.0) / 1000.0)
+        nir_albedo = rng.normal(0.50, 0.045)
+        swir1_level = nir_albedo * rng.normal(0.58, 0.04)
+        swir2_level = nir_albedo * rng.normal(0.30, 0.03)
+        global_tilt = rng.normal(0.0, 0.010) * ((wls - 1200.0) / 1000.0)
 
-        re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 1.1)
-        re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.7)
-        chl_depth = 0.095 - (0.012 if cls == 1 else 0.0) + rng.normal(0, 0.008)
-        swir_narrow_dip = 0.038 + (0.016 if cls == 2 else 0.0) + rng.normal(0, 0.005)
+        re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 1.0)
+        re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.6)
+        chl_depth = 0.095 - (0.015 if cls == 1 else 0.0) + rng.normal(0, 0.007)
+        swir_narrow_dip = 0.038 + (0.018 if cls == 2 else 0.0) + rng.normal(0, 0.004)
         swir_dip_width = 22.0 if cls != 2 else 14.0
 
         green_peak = chl_depth * np.exp(-0.5 * ((wls - 552.0) / 26.0) ** 2)
@@ -557,22 +664,23 @@ def generate_synthetic_vegetation_spectra(
         swir2_env = np.where(
             wls >= 2030, (swir2_level - swir1_level) + 0.06 * np.sin((wls - 2031) / 370.0 * np.pi), 0.0
         )
-        swir2_cell = (0.025 + (0.010 if cls == 1 else -0.008 if cls == 2 else 0.0)) * np.exp(
+        swir2_cell = (0.025 + (0.010 if cls == 1 else -0.009 if cls == 2 else 0.0)) * np.exp(
             -0.5 * ((wls - 2180.0) / 19.0) ** 2
         )
 
         spec = (
-            0.04 + green_peak + red_edge_step - w1_abs - w2_abs
+            0.045 + green_peak + red_edge_step - w1_abs - w2_abs
             + swir1_env - swir1_lignin + swir2_env - swir2_cell + global_tilt
-            + rng.normal(0, 0.0035, size=n_bands)
+            + rng.normal(0, 0.003, size=n_bands)
         )
         X_raw[i] = spec
 
+    # Piecewise Savitzky-Golay smoothing across the 3 contiguous optical blocks (rho in [0, 1])
     b1, b2, b3 = (wls <= 1330), (wls >= 1491) & (wls <= 1770), (wls >= 2031)
     X_sg = np.zeros_like(X_raw)
     for mask in [b1, b2, b3]:
-        X_sg[:, mask] = savgol_filter(X_raw[:, mask], window_length=10, polyorder=2, deriv=0, axis=1)
-    X_snv = (X_sg - X_sg.mean(axis=1, keepdims=True)) / (X_sg.std(axis=1, keepdims=True) + 1e-12)
+        X_sg[:, mask] = savgol_filter(X_raw[:, mask], window_length=11, polyorder=2, deriv=0, axis=1)
+    X_refl = np.clip(X_sg, 0.005, 0.995)
 
     cols = [f"WL_{int(w)}" for w in wls]
-    return pd.DataFrame(X_snv, columns=cols), y, wls
+    return pd.DataFrame(X_refl, columns=cols), y, wls
