@@ -584,46 +584,31 @@ class MSPA(BaseEstimator, TransformerMixin):
             raise ValueError("This MSPA instance is not fitted yet.")
         return self.feature_names_out_
 
-
 def generate_synthetic_vegetation_spectra(
     n_samples: int = 450,
-    excise_water_vapor: bool = False,
     random_state: int = 42,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
-    Generates physically realistic synthetic foliar reflectance spectra (rho in [0, 1],
-    Savitzky-Golay smoothed) across the VNIR-SWIR vegetation domain (400-2500 nm)
-    spanning 3 physiological states:
+    Generates physically realistic continuous foliar reflectance spectra (rho in [0, 1],
+    Savitzky-Golay smoothed) across 2,101 bands (400-2500 nm) spanning 3 classes:
       - Class 0: Healthy Control
       - Class 1: Chlorotic Stress (Pigment loss & Red-Edge blue-shift of ~2.8 nm)
       - Class 2: Structural/Hydric Stress (SWIR lignin/cellulose concavity shift)
-
-    Parameters
-    ----------
-    n_samples : int, default=450
-        Total number of synthetic foliar spectra to generate.
-    excise_water_vapor : bool, default=False
-        If False (default), returns continuous laboratory/leaf-clip spectra across
-        400-2500 nm (D = 2,101 bands, including the 1450 nm and 1940 nm water bands).
-        If True, excises the deep atmospheric water-vapor windows (1331-1490 nm and
-        1771-2030 nm) and detector edges to simulate solar field spectra (D = 1,580 bands).
-    random_state : int, default=42
-        Random seed for reproducibility.
     """
     rng = np.random.default_rng(random_state)
-    wls_full = np.arange(400.0, 2501.0, 1.0)
-    n_full = len(wls_full)
+    wls = np.arange(400.0, 2501.0, 1.0)
+    n_bands = len(wls)
 
     y = np.repeat([0, 1, 2], n_samples // 3)
     if len(y) < n_samples:
         y = np.concatenate([y, np.zeros(n_samples - len(y), dtype=int)])
     y = rng.permutation(y)
 
-    X_raw = np.zeros((n_samples, n_full), dtype=np.float64)
+    X_raw = np.zeros((n_samples, n_bands), dtype=np.float64)
     for i in range(n_samples):
         cls = y[i]
         nir_albedo = rng.normal(0.50, 0.04)
-        global_tilt = rng.normal(0.0, 0.008) * ((wls_full - 1200.0) / 1000.0)
+        global_tilt = rng.normal(0.0, 0.008) * ((wls - 1200.0) / 1000.0)
 
         re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 0.9)
         re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.5)
@@ -632,43 +617,32 @@ def generate_synthetic_vegetation_spectra(
         swir1_dip_width = 22.0 if cls != 2 else 14.0
         swir2_cell_dip = 0.028 + (0.012 if cls == 1 else (-0.010 if cls == 2 else 0.0)) + rng.normal(0, 0.003)
 
-        green_peak = chl_depth * np.exp(-0.5 * ((wls_full - 552.0) / 24.0) ** 2)
-        chl_well = -0.035 * np.exp(-0.5 * ((wls_full - 672.0) / 18.0) ** 2)
-        red_edge_ramp = nir_albedo / (1.0 + np.exp(-(wls_full - re_center) / re_width))
+        green_peak = chl_depth * np.exp(-0.5 * ((wls - 552.0) / 24.0) ** 2)
+        chl_well = -0.035 * np.exp(-0.5 * ((wls - 672.0) / 18.0) ** 2)
+        red_edge_ramp = nir_albedo / (1.0 + np.exp(-(wls - re_center) / re_width))
 
-        swir_decay = 1.0 - 0.36 * (1.0 / (1.0 + np.exp(-(wls_full - 1380.0) / 85.0))) \
-                         - 0.38 * (1.0 / (1.0 + np.exp(-(wls_full - 1880.0) / 75.0)))
+        swir_decay = (
+            1.0
+            - 0.36 / (1.0 + np.exp(-(wls - 1380.0) / 85.0))
+            - 0.38 / (1.0 + np.exp(-(wls - 1880.0) / 75.0))
+        )
 
-        w1_abs = 0.032 * np.exp(-0.5 * ((wls_full - 975.0) / 28.0) ** 2)
-        w2_abs = 0.052 * np.exp(-0.5 * ((wls_full - 1195.0) / 34.0) ** 2)
-        h2o_1450 = 0.165 * np.exp(-0.5 * ((wls_full - 1450.0) / 42.0) ** 2)
-        lignin_1685 = swir1_lignin_dip * np.exp(-0.5 * ((wls_full - 1685.0) / swir1_dip_width) ** 2)
-        h2o_1940 = 0.145 * np.exp(-0.5 * ((wls_full - 1940.0) / 45.0) ** 2)
-        cell_2180 = swir2_cell_dip * np.exp(-0.5 * ((wls_full - 2180.0) / 20.0) ** 2)
+        w1_abs = 0.032 * np.exp(-0.5 * ((wls - 975.0) / 28.0) ** 2)
+        w2_abs = 0.052 * np.exp(-0.5 * ((wls - 1195.0) / 34.0) ** 2)
+        h2o_1450 = 0.165 * np.exp(-0.5 * ((wls - 1450.0) / 42.0) ** 2)
+        lignin_1685 = swir1_lignin_dip * np.exp(-0.5 * ((wls - 1685.0) / swir1_dip_width) ** 2)
+        h2o_1940 = 0.145 * np.exp(-0.5 * ((wls - 1940.0) / 45.0) ** 2)
+        cell_2180 = swir2_cell_dip * np.exp(-0.5 * ((wls - 2180.0) / 20.0) ** 2)
 
         spec = (
             0.045 + green_peak + chl_well + red_edge_ramp * swir_decay
             - w1_abs - w2_abs - h2o_1450 - lignin_1685 - h2o_1940 - cell_2180
-            + global_tilt + rng.normal(0, 0.0028, size=n_full)
+            + global_tilt + rng.normal(0, 0.0028, size=n_bands)
         )
         X_raw[i] = spec
 
-    if excise_water_vapor:
-        keep_mask = (
-            ((wls_full >= 401) & (wls_full <= 1330))
-            | ((wls_full >= 1491) & (wls_full <= 1770))
-            | ((wls_full >= 2031) & (wls_full <= 2400))
-        )
-        wls = wls_full[keep_mask]
-        X_sub = X_raw[:, keep_mask]
-        b1, b2, b3 = (wls <= 1330), (wls >= 1491) & (wls <= 1770), (wls >= 2031)
-        X_sg = np.zeros_like(X_sub)
-        for bm in [b1, b2, b3]:
-            X_sg[:, bm] = savgol_filter(X_sub[:, bm], window_length=11, polyorder=2, deriv=0, axis=1)
-    else:
-        wls = wls_full
-        X_sg = savgol_filter(X_raw, window_length=11, polyorder=2, deriv=0, axis=1)
-
+    X_sg = savgol_filter(X_raw, window_length=11, polyorder=2, deriv=0, axis=1)
     X_refl = np.clip(X_sg, 0.005, 0.995)
+
     cols = [f"WL_{int(w)}" for w in wls]
     return pd.DataFrame(X_refl, columns=cols), y, wls
