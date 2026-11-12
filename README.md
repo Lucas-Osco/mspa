@@ -264,13 +264,15 @@ print("VNIR active valleys:", [v[0] for v in mspa_vnir.active_valleys_])
 
 ## Citation
 
-If you use `MSPA` in your research, please cite:
+If you use `MSPA` in your research, please cite the Zenodo archive:
 
 ```bibtex
-@article{Osco2026MSPA,
-  author  = {Osco, Lucas Prado and Silva, Marcelo Santos da and Silva, Filipe Vieira and Zhao, Liang and Ramos, Ana Paula Marques and Ferreira, Ednaldo Jos{\'e} and Bendahan, Amaury Burlamaqui and Jorge, Lucio Andr{\'e} de Castro},
-  title   = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Spectroscopy},
-  journal = {IEEE Transactions on Geoscience and Remote Sensing},
-  year    = {2026}
+@software{Osco2026MSPA,
+  author    = {Osco, Lucas Prado and Silva, Marcelo Santos da and Silva, Filipe Vieira and Zhao, Liang and Ramos, Ana Paula Marques and Ferreira, Ednaldo Jos{\'e} and Bendahan, Amaury Burlamaqui and Jorge, Lucio Andr{\'e} de Castro},
+  title     = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Spectroscopy},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23890722},
+  url       = {https://doi.org/10.5281/zenodo.23890723}
 }
 ```
