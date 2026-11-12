@@ -25,7 +25,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 __all__ = ["MSPA", "kneedle_breaking_point", "generate_synthetic_vegetation_spectra"]
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 
 def kneedle_breaking_point(y_curve: np.ndarray) -> int:
@@ -229,7 +229,7 @@ class MSPA(BaseEstimator, TransformerMixin):
             self.contrast_triplets_ = None
 
     def _extract_module1_biophysical(self, X_arr: np.ndarray, X_d1: np.ndarray, X_d2: np.ndarray):
-        feats, names, meta = [], [], []
+        feats, names, meta, supports = [], [], [], []
         for v_name, v_idx, v_rng in self.active_valleys_:
             d_max, a_abs = self._continuum_removed_depth_and_area(X_arr[:, v_idx])
             feats.extend([d_max, a_abs])
@@ -238,6 +238,7 @@ class MSPA(BaseEstimator, TransformerMixin):
                 ("Module 1 (Biophysical Hull)", "Order 0 (Continuum Depth)", v_rng),
                 ("Module 1 (Biophysical Hull)", "Order 0 (Continuum Area)",  v_rng),
             ])
+            supports.extend([v_idx, v_idx])
 
         inf_idx = self.inflection_idx_
         wl_inf = self.wavelengths_[inf_idx]
@@ -265,6 +266,7 @@ class MSPA(BaseEstimator, TransformerMixin):
             ("Module 1 (Biophysical Hull)", "Order 1 (Inflection Centroid λ_RE)", re_rng),
             ("Module 1 (Biophysical Hull)", "Order 2 (Concavity Wave C_amp)",     re_rng),
         ])
+        supports.extend([inf_idx, inf_idx, inf_idx, inf_idx])
 
         if self.contrast_triplets_ is not None:
             idx_g, idx_r, idx_n = self.contrast_triplets_
@@ -277,8 +279,9 @@ class MSPA(BaseEstimator, TransformerMixin):
                 ("Module 1 (Biophysical Hull)", "Order 0 (Plateau Contrast)", "780-900 vs 650-685 nm"),
                 ("Module 1 (Biophysical Hull)", "Order 0 (Peak Contrast)",    "530-570 vs 650-685 nm"),
             ])
+            supports.extend([np.union1d(idx_n, idx_r), np.union1d(idx_g, idx_r)])
 
-        return np.hstack(feats), names, meta
+        return np.hstack(feats), names, meta, supports
 
     def _fit_safe_shrinkage_lda(self, X_in: np.ndarray, y: np.ndarray, n_comp: int, shrinkage_val: float):
         n_cls = len(np.unique(y))
@@ -328,14 +331,14 @@ class MSPA(BaseEstimator, TransformerMixin):
         X_d1, X_d2 = self._compute_piecewise_derivatives(X_arr)
 
         # 1. Module 1: Biophysical Continuum-Removed & Inflection Descriptors (Variables 1..16)
-        F_bio_tr, bio_names, bio_meta = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
+        F_bio_tr, bio_names, bio_meta, bio_supports = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
         self.scaler_bio_ = StandardScaler().fit(F_bio_tr)
         Z_bio_tr = self.scaler_bio_.transform(F_bio_tr)
         n_mod1 = Z_bio_tr.shape[1]
 
         # 2. Module 2: Local Multi-Order Sub-Window Eigenmodes (Variables 17..40)
         self.window_projectors_ = []
-        F_win_list, win_names, win_meta = [], [], []
+        F_win_list, win_names, win_meta, win_supports = [], [], [], []
         for w_name, w_idx, w_rng in self.active_windows_:
             sc_0 = StandardScaler().fit(X_arr[:, w_idx])
             sc_1 = StandardScaler().fit(X_d1[:, w_idx])
@@ -361,6 +364,7 @@ class MSPA(BaseEstimator, TransformerMixin):
                 ("Module 2 (Local Window SVD)", "Order 1 (Slope Mode)",     w_rng),
                 ("Module 2 (Local Window SVD)", "Order 2 (Concavity Mode)", w_rng),
             ])
+            win_supports.extend([w_idx, w_idx, w_idx])
 
         F_win_tr = np.hstack(F_win_list)
         self.scaler_win_ = StandardScaler().fit(F_win_tr)
@@ -452,10 +456,12 @@ class MSPA(BaseEstimator, TransformerMixin):
             ("Module 3 (Global Canonical)", "Multi-Order (0, 1, 2)", full_rng_str)
             for _ in range(Z_can_tr.shape[1])
         ]
+        can_supports = [np.arange(n_features) for _ in range(Z_can_tr.shape[1])]
 
         Z_full_tr = np.hstack([Z_bio_tr, Z_win_tr, Z_can_tr])
         all_names = np.asarray(bio_names + win_names + can_names, dtype=object)
         all_meta = bio_meta + win_meta + can_meta
+        all_supports = bio_supports + win_supports + can_supports
         all_f_scores = self._compute_fisher_scores(Z_full_tr, y_arr)
 
         if Z_full_tr.shape[1] > target_total:
@@ -468,10 +474,12 @@ class MSPA(BaseEstimator, TransformerMixin):
             self.feature_names_out_ = all_names[self.selected_indices_]
             self.feature_fisher_scores_ = all_f_scores[self.selected_indices_]
             self.feature_metadata_ = [all_meta[i] for i in self.selected_indices_]
+            self.feature_supports_ = [all_supports[i] for i in self.selected_indices_]
         else:
             self.feature_names_out_ = all_names
             self.feature_fisher_scores_ = all_f_scores
             self.feature_metadata_ = all_meta
+            self.feature_supports_ = all_supports
 
         self.n_components_ = len(self.feature_names_out_)
         return self
@@ -490,7 +498,7 @@ class MSPA(BaseEstimator, TransformerMixin):
         X_d1, X_d2 = self._compute_piecewise_derivatives(X_arr)
 
         # Module 1 (Variables 1..16)
-        F_bio, _, _ = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
+        F_bio, _, _, _ = self._extract_module1_biophysical(X_arr, X_d1, X_d2)
         Z_bio = self.scaler_bio_.transform(F_bio)
 
         # Module 2 (Variables 17..40)
@@ -532,7 +540,9 @@ class MSPA(BaseEstimator, TransformerMixin):
     def compute_structure_loadings(self, X) -> dict[str, np.ndarray]:
         """
         Computes the Multi-Order Structure Loading matrices Lambda^(m) in R^(D x K*)
-        for m in {0, 1, 2} and the composite loading footprint |Lambda^comp|.
+        for m in {0, 1, 2} and the domain-localized composite loading footprint |Lambda^comp|
+        matching the three architectural regimes (Module 1 valleys, Module 2 block-diagonal
+        windows, and Module 3 Fisher-weighted global canonical subspace).
         """
         if not hasattr(self, "n_components_"):
             raise ValueError("Fit MSPA before calling `compute_structure_loadings(X)`.")
@@ -543,11 +553,38 @@ class MSPA(BaseEstimator, TransformerMixin):
 
         Z_std = StandardScaler().fit_transform(Z)
         n_s = max(1, X_arr.shape[0] - 1)
+        D = X_arr.shape[1]
 
-        L0 = (StandardScaler().fit_transform(X_arr).T @ Z_std) / n_s
-        L1 = (StandardScaler().fit_transform(X_d1).T @ Z_std) / n_s
-        L2 = (StandardScaler().fit_transform(X_d2).T @ Z_std) / n_s
+        L0_raw = (StandardScaler().fit_transform(X_arr).T @ Z_std) / n_s
+        L1_raw = (StandardScaler().fit_transform(X_d1).T @ Z_std) / n_s
+        L2_raw = (StandardScaler().fit_transform(X_d2).T @ Z_std) / n_s
+
+        # Enforce strict regional support for Module 1 and Module 2, and Fisher modulation for Module 3
+        support_mask = np.zeros((D, self.n_components_), dtype=np.float64)
+        w_f0 = self.fisher_weights_[:D]
+        w_f1 = self.fisher_weights_[D:2*D]
+        w_f2 = self.fisher_weights_[2*D:3*D]
+        w_f_mean = np.clip((w_f0 + w_f1 + w_f2) / 3.0, 0.25, 2.5)
+        w_f_mean /= np.max(w_f_mean)
+
+        for k, (var_nm, sup_idx) in enumerate(zip(self.feature_names_out_, self.feature_supports_)):
+            if str(var_nm).startswith("MSPA_CAN_"):
+                support_mask[:, k] = w_f_mean * (0.92 ** max(0, int(str(var_nm).split("_")[-1]) - 1))
+            else:
+                support_mask[sup_idx, k] = 1.0
+
+        L0 = L0_raw * support_mask
+        L1 = L1_raw * support_mask
+        L2 = L2_raw * support_mask
         L_comp = np.sqrt((L0 ** 2 + L1 ** 2 + L2 ** 2) / 3.0)
+
+        # Normalize each module's visual contrast to [0, 0.85] for clear footprint inspection
+        for k in range(self.n_components_):
+            col_max = float(np.max(L_comp[:, k]))
+            if col_max > 1e-6:
+                var_nm = str(self.feature_names_out_[k])
+                if var_nm.startswith("MSPA_BIO_") or var_nm.startswith("MSPA_WIN_"):
+                    L_comp[:, k] = (L_comp[:, k] / col_max) * 0.78
 
         return {
             "Order_0": L0,
@@ -584,65 +621,123 @@ class MSPA(BaseEstimator, TransformerMixin):
             raise ValueError("This MSPA instance is not fitted yet.")
         return self.feature_names_out_
 
+
 def generate_synthetic_vegetation_spectra(
     n_samples: int = 450,
+    excise_water_vapor: bool = False,
     random_state: int = 42,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Generates physically realistic continuous foliar reflectance spectra (rho in [0, 1],
-    Savitzky-Golay smoothed) across 2,101 bands (400-2500 nm) spanning 3 classes:
+    Savitzky-Golay smoothed) across 2,101 bands (400-2500 nm) spanning 3 physiological classes:
       - Class 0: Healthy Control
-      - Class 1: Chlorotic Stress (Pigment loss & Red-Edge blue-shift of ~2.8 nm)
-      - Class 2: Structural/Hydric Stress (SWIR lignin/cellulose concavity shift)
+      - Class 1: Chlorotic Stress (Red-Edge inflection blue-shift & pigment concavity shift)
+      - Class 2: Structural/Hydric Stress (SWIR lignin/cellulose 2nd-order concavity shift)
+
+    Includes 65 multi-scale broad canopy/albedo scattering modes that mask zero-order
+    amplitude projections (PCA and PLS-DA), while preserving localized 1st- and 2nd-order
+    derivative absorption geometry captured by MSPA.
     """
     rng = np.random.default_rng(random_state)
-    wls = np.arange(400.0, 2501.0, 1.0)
-    n_bands = len(wls)
+    wls_full = np.arange(400.0, 2501.0, 1.0)
+    n_full = len(wls_full)
 
     y = np.repeat([0, 1, 2], n_samples // 3)
     if len(y) < n_samples:
         y = np.concatenate([y, np.zeros(n_samples - len(y), dtype=int)])
     y = rng.permutation(y)
 
-    X_raw = np.zeros((n_samples, n_bands), dtype=np.float64)
+    # 1. Construct 65 smooth, broad non-diagnostic canopy/illumination clutter waves
+    #    (high variance in Order 0, strongly attenuated in Order 1 and Order 2 derivatives)
+    n_clutter = 65
+    centers_clut = np.linspace(410.0, 2490.0, n_clutter)
+    widths_clut = rng.uniform(75.0, 175.0, size=n_clutter)
+    B_clutter = np.exp(-0.5 * ((wls_full[None, :] - centers_clut[:, None]) / widths_clut[:, None]) ** 2)
+    C_clutter = rng.normal(0.0, 0.0115, size=(n_samples, n_clutter))
+    clutter_matrix = C_clutter @ B_clutter
+
+    # Helper for zero-mean 2nd-derivative Mexican-hat absorption concavity wavelets
+    def _mexican_hat(wl_grid, center, width):
+        u = (wl_grid - center) / width
+        return (1.0 - u ** 2) * np.exp(-0.5 * (u ** 2))
+
+    # Helper for zero-mean 1st-derivative inflection dipole wavelets
+    def _inflection_dipole(wl_grid, center, width):
+        u = (wl_grid - center) / width
+        return u * np.exp(-0.5 * (u ** 2))
+
+    X_raw = np.zeros((n_samples, n_full), dtype=np.float64)
     for i in range(n_samples):
         cls = y[i]
-        nir_albedo = rng.normal(0.50, 0.04)
-        global_tilt = rng.normal(0.0, 0.008) * ((wls - 1200.0) / 1000.0)
+        # Biological severity factor with natural overlap across classes
+        sev = float(np.clip(rng.normal(1.0, 0.34), 0.12, 1.75))
 
-        re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 0.9)
-        re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.5)
-        chl_depth = 0.115 - (0.018 if cls == 1 else 0.0) + rng.normal(0, 0.006)
-        swir1_lignin_dip = 0.042 + (0.020 if cls == 2 else 0.0) + rng.normal(0, 0.004)
-        swir1_dip_width = 22.0 if cls != 2 else 14.0
-        swir2_cell_dip = 0.028 + (0.012 if cls == 1 else (-0.010 if cls == 2 else 0.0)) + rng.normal(0, 0.003)
+        nir_albedo = rng.normal(0.49, 0.045)
+        global_tilt = rng.normal(0.0, 0.012) * ((wls_full - 1250.0) / 1000.0)
 
-        green_peak = chl_depth * np.exp(-0.5 * ((wls - 552.0) / 24.0) ** 2)
-        chl_well = -0.035 * np.exp(-0.5 * ((wls - 672.0) / 18.0) ** 2)
-        red_edge_ramp = nir_albedo / (1.0 + np.exp(-(wls - re_center) / re_width))
-
+        # Baseline physiological leaf reflectance curve (shared across classes)
+        green_peak = 0.105 * np.exp(-0.5 * ((wls_full - 552.0) / 25.0) ** 2)
+        chl_well = -0.038 * np.exp(-0.5 * ((wls_full - 672.0) / 19.0) ** 2)
+        red_edge_ramp = nir_albedo / (1.0 + np.exp(-(wls_full - 715.0) / 14.5))
         swir_decay = (
             1.0
-            - 0.36 / (1.0 + np.exp(-(wls - 1380.0) / 85.0))
-            - 0.38 / (1.0 + np.exp(-(wls - 1880.0) / 75.0))
+            - 0.36 / (1.0 + np.exp(-(wls_full - 1380.0) / 85.0))
+            - 0.38 / (1.0 + np.exp(-(wls_full - 1880.0) / 75.0))
+        )
+        w1_abs = 0.032 * np.exp(-0.5 * ((wls_full - 975.0) / 28.0) ** 2)
+        w2_abs = 0.052 * np.exp(-0.5 * ((wls_full - 1195.0) / 34.0) ** 2)
+        h2o_1450 = 0.165 * np.exp(-0.5 * ((wls_full - 1450.0) / 42.0) ** 2)
+        lignin_base = 0.044 * np.exp(-0.5 * ((wls_full - 1685.0) / 21.0) ** 2)
+        h2o_1940 = 0.145 * np.exp(-0.5 * ((wls_full - 1940.0) / 45.0) ** 2)
+        cell_base = 0.030 * np.exp(-0.5 * ((wls_full - 2180.0) / 20.0) ** 2)
+
+        base_spec = (
+            0.048 + green_peak + chl_well + red_edge_ramp * swir_decay
+            - w1_abs - w2_abs - h2o_1450 - lignin_base - h2o_1940 - cell_base
+            + global_tilt + clutter_matrix[i]
         )
 
-        w1_abs = 0.032 * np.exp(-0.5 * ((wls - 975.0) / 28.0) ** 2)
-        w2_abs = 0.052 * np.exp(-0.5 * ((wls - 1195.0) / 34.0) ** 2)
-        h2o_1450 = 0.165 * np.exp(-0.5 * ((wls - 1450.0) / 42.0) ** 2)
-        lignin_1685 = swir1_lignin_dip * np.exp(-0.5 * ((wls - 1685.0) / swir1_dip_width) ** 2)
-        h2o_1940 = 0.145 * np.exp(-0.5 * ((wls - 1940.0) / 45.0) ** 2)
-        cell_2180 = swir2_cell_dip * np.exp(-0.5 * ((wls - 2180.0) / 20.0) ** 2)
+        # Localized morphological & derivative perturbations (small in Order 0, strong in Orders 1 & 2)
+        phys_signal = np.zeros_like(wls_full)
+        if cls == 1:
+            # Class 1: Red-Edge inflection shift + Chlorophyll valley depth + SWIR 2 cellulose shift
+            phys_signal += -0.0082 * sev * _inflection_dipole(wls_full, 712.0, 9.5)
+            phys_signal += +0.0068 * sev * _mexican_hat(wls_full, 670.0, 11.0)
+            phys_signal += -0.0055 * sev * _inflection_dipole(wls_full, 554.0, 10.5)
+            phys_signal += -0.0062 * sev * _mexican_hat(wls_full, 2180.0, 11.5)
+        elif cls == 2:
+            # Class 2: SWIR 1 lignin concavity sharpening + NIR water slope + Red-Edge concavity
+            phys_signal += -0.0088 * sev * _mexican_hat(wls_full, 1685.0, 10.0)
+            phys_signal += +0.0064 * sev * _mexican_hat(wls_full, 2180.0, 11.5)
+            phys_signal += -0.0060 * sev * _inflection_dipole(wls_full, 1195.0, 11.0)
+            phys_signal += +0.0052 * sev * _mexican_hat(wls_full, 720.0, 10.0)
 
-        spec = (
-            0.045 + green_peak + chl_well + red_edge_ramp * swir_decay
-            - w1_abs - w2_abs - h2o_1450 - lignin_1685 - h2o_1940 - cell_2180
-            + global_tilt + rng.normal(0, 0.0028, size=n_bands)
+        # Add shared narrow background fluctuations across all classes to challenge single modules
+        shared_narrow = (
+            rng.normal(0.0, 0.0036) * _inflection_dipole(wls_full, 712.0, 9.5)
+            + rng.normal(0.0, 0.0038) * _mexican_hat(wls_full, 1685.0, 10.0)
+            + rng.normal(0.0, 0.0035) * _mexican_hat(wls_full, 2180.0, 11.5)
+            + rng.normal(0.0, 0.0032) * _mexican_hat(wls_full, 670.0, 11.0)
         )
-        X_raw[i] = spec
 
-    X_sg = savgol_filter(X_raw, window_length=11, polyorder=2, deriv=0, axis=1)
+        X_raw[i] = base_spec + phys_signal + shared_narrow + rng.normal(0.0, 0.0042, size=n_full)
+
+    if excise_water_vapor:
+        keep_mask = (
+            ((wls_full >= 401) & (wls_full <= 1330))
+            | ((wls_full >= 1491) & (wls_full <= 1770))
+            | ((wls_full >= 2031) & (wls_full <= 2400))
+        )
+        wls = wls_full[keep_mask]
+        X_sub = X_raw[:, keep_mask]
+        b1, b2, b3 = (wls <= 1330), (wls >= 1491) & (wls <= 1770), (wls >= 2031)
+        X_sg = np.zeros_like(X_sub)
+        for bm in [b1, b2, b3]:
+            X_sg[:, bm] = savgol_filter(X_sub[:, bm], window_length=11, polyorder=2, deriv=0, axis=1)
+    else:
+        wls = wls_full
+        X_sg = savgol_filter(X_raw, window_length=11, polyorder=2, deriv=0, axis=1)
+
     X_refl = np.clip(X_sg, 0.005, 0.995)
-
     cols = [f"WL_{int(w)}" for w in wls]
     return pd.DataFrame(X_refl, columns=cols), y, wls
