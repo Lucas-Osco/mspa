@@ -8,7 +8,7 @@ Reference:
 Osco, L. P., Silva, M. S., Silva, F. V., Zhao, L., Ramos, A. P. M.,
 Ferreira, E. J., Bendahan, A. B., & Jorge, L. A. C. (2026).
 Morpho-Spectral Projection Analysis (MSPA) for Plant Spectroscopy.
-IEEE Transactions on Geoscience and Remote Sensing.
+Zenodo. https://doi.org/10.5281/zenodo.23890722
 
 Author: Lucas Prado Osco et al. (2026)
 License: MIT
@@ -25,7 +25,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 __all__ = ["MSPA", "kneedle_breaking_point", "generate_synthetic_vegetation_spectra"]
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 def kneedle_breaking_point(y_curve: np.ndarray) -> int:
@@ -81,24 +81,6 @@ class MSPA(BaseEstimator, TransformerMixin):
         differential state space [X^(0), X^(1), X^(2)] weighted by inter/intra-class
         Fisher discriminability (omega_q) and projected via analytical Ledoit-Wolf
         shrinkage discriminant analysis with rank-safe orthogonal completion.
-
-    Parameters
-    ----------
-    n_components : int or 'auto', default=64
-        Target number of morpho-spectral variables to retain, or 'auto' to estimate
-        the intrinsic dimensionality via the Kneedle maximum-curvature criterion.
-    wavelengths : array-like of shape (n_features,), optional (default=None)
-        Wavelengths (in nm, within 350-2500 nm) corresponding to the columns of X.
-        If None and X is a pandas DataFrame, MSPA automatically parses numerical
-        wavelengths from column headers (e.g., 'WL_401', '401.0').
-    sg_window : int, default=11
-        Window length for piecewise Savitzky-Golay derivative calculation.
-    sg_poly : int, default=2
-        Polynomial order for Savitzky-Golay derivative calculation.
-    shrinkage : float, default=0.35
-        Analytical Ledoit-Wolf covariance shrinkage parameter in (0, 1) for Module 3.
-    random_state : int, default=42
-        Random seed for deterministic orientation.
     """
 
     def __init__(
@@ -136,7 +118,7 @@ class MSPA(BaseEstimator, TransformerMixin):
                 parsed_wl = np.asarray(extracted, dtype=float)
 
         if parsed_wl is None:
-            self.wavelengths_ = np.linspace(400.0, 2400.0, n_features)
+            self.wavelengths_ = np.linspace(400.0, 2500.0, n_features)
             self.is_optical_vegetation_domain_ = True
         else:
             self.wavelengths_ = parsed_wl
@@ -278,10 +260,10 @@ class MSPA(BaseEstimator, TransformerMixin):
         ])
         re_rng = f"{wl_inf[0]:.0f}-{wl_inf[-1]:.0f} nm"
         meta.extend([
-            ("Module 1 (Biophysical Hull)", "Order 1 (Max Slope S_max)",       re_rng),
-            ("Module 1 (Biophysical Hull)", "Order 1 (Mean Slope S_bar)",      re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 1 (Max Slope S_max)",          re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 1 (Mean Slope S_bar)",         re_rng),
             ("Module 1 (Biophysical Hull)", "Order 1 (Inflection Centroid λ_RE)", re_rng),
-            ("Module 1 (Biophysical Hull)", "Order 2 (Concavity Wave C_amp)",  re_rng),
+            ("Module 1 (Biophysical Hull)", "Order 2 (Concavity Wave C_amp)",     re_rng),
         ])
 
         if self.contrast_triplets_ is not None:
@@ -400,7 +382,6 @@ class MSPA(BaseEstimator, TransformerMixin):
         self.mu_weighted_ = X_weighted.mean(axis=0, keepdims=True)
         X_w_cent = X_weighted - self.mu_weighted_
 
-        # Kneedle singular energy spectrum on H_train
         max_probe = min(60, n_samples - 2, X_w_cent.shape[1])
         _, ev_probe = _svd_orthogonal_basis(X_w_cent, max_probe)
         cum_var = np.cumsum(ev_probe)
@@ -472,7 +453,6 @@ class MSPA(BaseEstimator, TransformerMixin):
             for _ in range(Z_can_tr.shape[1])
         ]
 
-        # Concatenated in didactic manuscript order: Module 1 (1..16) -> Module 2 (17..40) -> Module 3 (41..64)
         Z_full_tr = np.hstack([Z_bio_tr, Z_win_tr, Z_can_tr])
         all_names = np.asarray(bio_names + win_names + can_names, dtype=object)
         all_meta = bio_meta + win_meta + can_meta
@@ -552,15 +532,7 @@ class MSPA(BaseEstimator, TransformerMixin):
     def compute_structure_loadings(self, X) -> dict[str, np.ndarray]:
         """
         Computes the Multi-Order Structure Loading matrices Lambda^(m) in R^(D x K*)
-        for m in {0, 1, 2} and the composite loading footprint |Lambda^comp| (Eq. 10).
-
-        Returns
-        -------
-        dict with keys:
-            - 'Order_0'   : Correlation loading matrix with reflectance X^(0) (D x K*)
-            - 'Order_1'   : Correlation loading matrix with 1st derivative X^(1) (D x K*)
-            - 'Order_2'   : Correlation loading matrix with 2nd derivative X^(2) (D x K*)
-            - 'Composite' : Root-mean-square multi-order loading magnitude (D x K*)
+        for m in {0, 1, 2} and the composite loading footprint |Lambda^comp|.
         """
         if not hasattr(self, "n_components_"):
             raise ValueError("Fit MSPA before calling `compute_structure_loadings(X)`.")
@@ -615,72 +587,88 @@ class MSPA(BaseEstimator, TransformerMixin):
 
 def generate_synthetic_vegetation_spectra(
     n_samples: int = 450,
+    excise_water_vapor: bool = False,
     random_state: int = 42,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Generates physically realistic synthetic foliar reflectance spectra (rho in [0, 1],
-    Savitzky-Golay smoothed) across 1,580 bands (401-1330, 1491-1770, 2031-2400 nm)
+    Savitzky-Golay smoothed) across the VNIR-SWIR vegetation domain (400-2500 nm)
     spanning 3 physiological states:
       - Class 0: Healthy Control
       - Class 1: Chlorotic Stress (Pigment loss & Red-Edge blue-shift of ~2.8 nm)
       - Class 2: Structural/Hydric Stress (SWIR lignin/cellulose concavity shift)
 
-    Designed for standalone tutorials and Google Colab demonstrations without requiring
-    proprietary field data.
+    Parameters
+    ----------
+    n_samples : int, default=450
+        Total number of synthetic foliar spectra to generate.
+    excise_water_vapor : bool, default=False
+        If False (default), returns continuous laboratory/leaf-clip spectra across
+        400-2500 nm (D = 2,101 bands, including the 1450 nm and 1940 nm water bands).
+        If True, excises the deep atmospheric water-vapor windows (1331-1490 nm and
+        1771-2030 nm) and detector edges to simulate solar field spectra (D = 1,580 bands).
+    random_state : int, default=42
+        Random seed for reproducibility.
     """
     rng = np.random.default_rng(random_state)
-    wls = np.array(
-        list(range(401, 1331)) + list(range(1491, 1771)) + list(range(2031, 2401)),
-        dtype=float,
-    )
-    n_bands = len(wls)
+    wls_full = np.arange(400.0, 2501.0, 1.0)
+    n_full = len(wls_full)
+
     y = np.repeat([0, 1, 2], n_samples // 3)
     if len(y) < n_samples:
         y = np.concatenate([y, np.zeros(n_samples - len(y), dtype=int)])
     y = rng.permutation(y)
 
-    X_raw = np.zeros((n_samples, n_bands), dtype=np.float64)
+    X_raw = np.zeros((n_samples, n_full), dtype=np.float64)
     for i in range(n_samples):
         cls = y[i]
-        nir_albedo = rng.normal(0.50, 0.045)
-        swir1_level = nir_albedo * rng.normal(0.58, 0.04)
-        swir2_level = nir_albedo * rng.normal(0.30, 0.03)
-        global_tilt = rng.normal(0.0, 0.010) * ((wls - 1200.0) / 1000.0)
+        nir_albedo = rng.normal(0.50, 0.04)
+        global_tilt = rng.normal(0.0, 0.008) * ((wls_full - 1200.0) / 1000.0)
 
-        re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 1.0)
-        re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.6)
-        chl_depth = 0.095 - (0.015 if cls == 1 else 0.0) + rng.normal(0, 0.007)
-        swir_narrow_dip = 0.038 + (0.018 if cls == 2 else 0.0) + rng.normal(0, 0.004)
-        swir_dip_width = 22.0 if cls != 2 else 14.0
+        re_center = 716.0 - (2.8 if cls == 1 else (0.8 if cls == 2 else 0.0)) + rng.normal(0, 0.9)
+        re_width = 14.5 + (2.2 if cls == 1 else (-1.2 if cls == 2 else 0.0)) + rng.normal(0, 0.5)
+        chl_depth = 0.115 - (0.018 if cls == 1 else 0.0) + rng.normal(0, 0.006)
+        swir1_lignin_dip = 0.042 + (0.020 if cls == 2 else 0.0) + rng.normal(0, 0.004)
+        swir1_dip_width = 22.0 if cls != 2 else 14.0
+        swir2_cell_dip = 0.028 + (0.012 if cls == 1 else (-0.010 if cls == 2 else 0.0)) + rng.normal(0, 0.003)
 
-        green_peak = chl_depth * np.exp(-0.5 * ((wls - 552.0) / 26.0) ** 2)
-        red_edge_step = nir_albedo / (1.0 + np.exp(-(wls - re_center) / re_width))
-        w1_abs = 0.035 * np.exp(-0.5 * ((wls - 975.0) / 28.0) ** 2)
-        w2_abs = 0.055 * np.exp(-0.5 * ((wls - 1195.0) / 34.0) ** 2)
-        swir1_env = np.where(
-            wls >= 1490, (swir1_level - nir_albedo) + 0.08 * np.sin((wls - 1491) / 280.0 * np.pi), 0.0
-        )
-        swir1_lignin = swir_narrow_dip * np.exp(-0.5 * ((wls - 1685.0) / swir_dip_width) ** 2)
-        swir2_env = np.where(
-            wls >= 2030, (swir2_level - swir1_level) + 0.06 * np.sin((wls - 2031) / 370.0 * np.pi), 0.0
-        )
-        swir2_cell = (0.025 + (0.010 if cls == 1 else -0.009 if cls == 2 else 0.0)) * np.exp(
-            -0.5 * ((wls - 2180.0) / 19.0) ** 2
-        )
+        green_peak = chl_depth * np.exp(-0.5 * ((wls_full - 552.0) / 24.0) ** 2)
+        chl_well = -0.035 * np.exp(-0.5 * ((wls_full - 672.0) / 18.0) ** 2)
+        red_edge_ramp = nir_albedo / (1.0 + np.exp(-(wls_full - re_center) / re_width))
+
+        swir_decay = 1.0 - 0.36 * (1.0 / (1.0 + np.exp(-(wls_full - 1380.0) / 85.0))) \
+                         - 0.38 * (1.0 / (1.0 + np.exp(-(wls_full - 1880.0) / 75.0)))
+
+        w1_abs = 0.032 * np.exp(-0.5 * ((wls_full - 975.0) / 28.0) ** 2)
+        w2_abs = 0.052 * np.exp(-0.5 * ((wls_full - 1195.0) / 34.0) ** 2)
+        h2o_1450 = 0.165 * np.exp(-0.5 * ((wls_full - 1450.0) / 42.0) ** 2)
+        lignin_1685 = swir1_lignin_dip * np.exp(-0.5 * ((wls_full - 1685.0) / swir1_dip_width) ** 2)
+        h2o_1940 = 0.145 * np.exp(-0.5 * ((wls_full - 1940.0) / 45.0) ** 2)
+        cell_2180 = swir2_cell_dip * np.exp(-0.5 * ((wls_full - 2180.0) / 20.0) ** 2)
 
         spec = (
-            0.045 + green_peak + red_edge_step - w1_abs - w2_abs
-            + swir1_env - swir1_lignin + swir2_env - swir2_cell + global_tilt
-            + rng.normal(0, 0.003, size=n_bands)
+            0.045 + green_peak + chl_well + red_edge_ramp * swir_decay
+            - w1_abs - w2_abs - h2o_1450 - lignin_1685 - h2o_1940 - cell_2180
+            + global_tilt + rng.normal(0, 0.0028, size=n_full)
         )
         X_raw[i] = spec
 
-    # Piecewise Savitzky-Golay smoothing across the 3 contiguous optical blocks (rho in [0, 1])
-    b1, b2, b3 = (wls <= 1330), (wls >= 1491) & (wls <= 1770), (wls >= 2031)
-    X_sg = np.zeros_like(X_raw)
-    for mask in [b1, b2, b3]:
-        X_sg[:, mask] = savgol_filter(X_raw[:, mask], window_length=11, polyorder=2, deriv=0, axis=1)
-    X_refl = np.clip(X_sg, 0.005, 0.995)
+    if excise_water_vapor:
+        keep_mask = (
+            ((wls_full >= 401) & (wls_full <= 1330))
+            | ((wls_full >= 1491) & (wls_full <= 1770))
+            | ((wls_full >= 2031) & (wls_full <= 2400))
+        )
+        wls = wls_full[keep_mask]
+        X_sub = X_raw[:, keep_mask]
+        b1, b2, b3 = (wls <= 1330), (wls >= 1491) & (wls <= 1770), (wls >= 2031)
+        X_sg = np.zeros_like(X_sub)
+        for bm in [b1, b2, b3]:
+            X_sg[:, bm] = savgol_filter(X_sub[:, bm], window_length=11, polyorder=2, deriv=0, axis=1)
+    else:
+        wls = wls_full
+        X_sg = savgol_filter(X_raw, window_length=11, polyorder=2, deriv=0, axis=1)
 
+    X_refl = np.clip(X_sg, 0.005, 0.995)
     cols = [f"WL_{int(w)}" for w in wls]
     return pd.DataFrame(X_refl, columns=cols), y, wls
