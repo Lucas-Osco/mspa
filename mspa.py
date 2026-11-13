@@ -8,7 +8,7 @@ Reference:
 Osco, L. P., Silva, M. S., Silva, F. V., Zhao, L., Ramos, A. P. M.,
 Ferreira, E. J., Bendahan, A. B., & Jorge, L. A. C. (2026).
 Morpho-Spectral Projection Analysis (MSPA) for Plant Spectroscopy.
-Zenodo. https://doi.org/10.5281/zenodo.23890722
+Zenodo. https://doi.org/10.5281/zenodo.23890723
 
 Author: Lucas Prado Osco et al. (2026)
 License: MIT
