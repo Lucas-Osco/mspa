@@ -272,7 +272,7 @@ If you use `MSPA` in your research, please cite the Zenodo archive:
   title     = {Morpho-Spectral Projection Analysis ({MSPA}) for Plant Spectroscopy},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.23890722},
+  doi       = {10.5281/zenodo.23890723},
   url       = {https://doi.org/10.5281/zenodo.23890723}
 }
 ```
